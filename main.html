@@ -1,0 +1,782 @@
+<!DOCTYPE html>
+<html lang="mk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>Виртуелна ТС 110/20 kV</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:rgba(17,23,30,.84);--fg:#eef2f5;--mut:#9fb0bd;--acc:#f2b632;--line:rgba(255,255,255,.13)}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;overflow:hidden;background:#0e141a;font-family:Inter,system-ui,sans-serif;color:var(--fg);-webkit-user-select:none;user-select:none}
+canvas#c{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;outline:none}
+.card{background:var(--bg);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border:1px solid var(--line);border-radius:12px}
+.mut{color:var(--mut)}
+#title{position:fixed;left:14px;top:14px;padding:10px 14px;max-width:calc(100vw - 28px)}
+#title h1{font-size:15px;margin:0;font-weight:700}
+#title p{margin:2px 0 0;font-size:12px;color:var(--mut)}
+#bar{position:fixed;right:14px;top:14px;display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;max-width:60vw}
+button{font:inherit;font-size:13px;font-weight:500;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:8px 12px;cursor:pointer;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+button:hover{border-color:rgba(242,182,50,.7)}
+button.on{background:var(--acc);color:#1b1b1b;border-color:var(--acc)}
+button:disabled{opacity:.45;cursor:default}
+#list{position:fixed;right:14px;top:64px;bottom:14px;width:310px;overflow:auto;padding:8px 8px 14px;display:none}
+#list.open{display:block}
+#list h3{font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--acc);margin:12px 6px 4px}
+.item{display:flex;align-items:center;gap:6px;padding:5px 6px;border-radius:8px;font-size:13px}
+.item:hover{background:rgba(255,255,255,.06)}
+.item span{flex:1;cursor:pointer}
+.item button{padding:4px 8px;font-size:12px}
+#hint{position:fixed;left:50%;bottom:14px;transform:translateX(-50%);padding:8px 14px;font-size:12px;color:var(--mut);white-space:nowrap}
+#hint b{color:var(--fg);font-weight:600}
+#tip{position:fixed;pointer-events:none;padding:6px 10px;font-size:12px;display:none;z-index:20;max-width:280px}
+#tip b{color:var(--acc);font-weight:600;display:block}
+#joy{position:fixed;left:22px;bottom:26px;width:124px;height:124px;border-radius:50%;background:rgba(17,23,30,.45);border:1px solid var(--line);display:none;touch-action:none;z-index:6}
+#knob{position:absolute;left:40px;top:40px;width:44px;height:44px;border-radius:50%;background:rgba(242,182,50,.85);pointer-events:none}
+#insp{position:fixed;right:0;top:0;bottom:0;width:400px;display:none;flex-direction:column;border-radius:0;border-width:0 0 0 1px;z-index:10}
+#insp.open{display:flex}
+.ihead{display:flex;gap:10px;align-items:flex-start;justify-content:space-between;padding:16px 16px 10px;border-bottom:1px solid var(--line)}
+.ihead h2{margin:2px 0 2px;font-size:18px;line-height:1.25}
+.ihead .mut{font-size:12px}
+.ibody{overflow:auto;padding:12px 16px 20px;font-size:13.5px;line-height:1.55;-webkit-user-select:text;user-select:text}
+.ibody p{margin:0 0 10px}
+.ibody h4{margin:16px 0 6px;font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--acc)}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+td{padding:5px 4px;border-bottom:1px solid var(--line);vertical-align:top}
+td:first-child{color:var(--mut);width:48%}
+.note{background:rgba(242,182,50,.1);border-left:3px solid var(--acc);padding:8px 10px;border-radius:6px;font-size:12.5px;margin:10px 0}
+#iOps{display:flex;flex-direction:column;gap:8px}
+.op{display:flex;align-items:center;justify-content:space-between;gap:10px;background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:10px;padding:8px 10px}
+.op .st{font-size:12.5px}
+.op .st b{display:block;font-size:13px}
+.st .r{color:#ff7b6b}.st .g{color:#5fd39a}
+#iMsg{display:none;margin-top:8px;padding:8px 10px;border-radius:8px;background:rgba(255,120,90,.14);border:1px solid rgba(255,120,90,.45);font-size:12.5px}
+.parts{display:flex;flex-wrap:wrap;gap:6px}
+.parts button{font-size:12px;padding:5px 9px;border-radius:999px}
+#start{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(10,14,18,.55);z-index:30;padding:16px}
+#start .box{max-width:560px;padding:22px 24px}
+#start h1{margin:0 0 8px;font-size:21px;line-height:1.25}
+#start p{font-size:14px;line-height:1.55;margin:0 0 10px}
+#start ul{margin:0 0 12px;padding-left:18px;font-size:13.5px;line-height:1.7}
+#start .small{font-size:12px}
+#go{font-size:15px;padding:10px 18px;margin-top:4px}
+#toast{position:fixed;left:50%;top:70px;transform:translateX(-50%);padding:8px 14px;font-size:13px;display:none;z-index:25}
+#load{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;font-size:14px;color:var(--mut);z-index:40;background:#0e141a}
+@media (max-width:760px){
+ #insp{left:0;right:0;top:auto;width:auto;height:54vh;border-width:1px 0 0;border-radius:14px 14px 0 0}
+ #hint{display:none}
+ #list{left:14px;width:auto;top:110px}
+ #title{max-width:46vw;padding:8px 10px}#title h1{font-size:13px}#title p{display:none}
+ #bar{max-width:52vw}#bar button{padding:7px 9px;font-size:12px}
+}
+</style>
+</head>
+<body>
+<canvas id="c" tabindex="0"></canvas>
+<div id="load">Се вчитува…</div>
+<div id="title" class="card"><h1>ТС 110/20 kV — виртуелна прошетка</h1><p>Разводни постројки · ТФБ</p></div>
+<div id="bar">
+  <button id="bList">Елементи</button>
+  <button id="bBird">Поглед одозгора</button>
+  <button id="bShadow">Сенки</button>
+  <button id="bHelp">?</button>
+</div>
+<div id="list" class="card"></div>
+<div id="hint" class="card"><b>W A S D</b> движење · <b>Shift</b> трчање · <b>влечи</b> поглед · <b>клик</b> на опрема за детали</div>
+<div id="tip" class="card"></div>
+<div id="joy"><div id="knob"></div></div>
+<div id="toast" class="card"></div>
+
+<div id="insp" class="card">
+  <div class="ihead">
+    <div><div id="iBay" class="mut"></div><h2 id="iTitle"></h2><div id="iEn" class="mut"></div></div>
+    <button id="iClose">✕ Назад</button>
+  </div>
+  <div class="ibody">
+    <div id="iOps"></div>
+    <div id="iMsg"></div>
+    <div id="iDesc" style="margin-top:12px"></div>
+    <div id="iData"></div>
+    <h4>Делови — допри за да се истакне</h4>
+    <div id="iParts" class="parts"></div>
+    <p class="mut" style="font-size:12px;margin-top:14px">Влечи за ротација · тркалце / штипнување за зум</p>
+  </div>
+</div>
+
+<div id="start">
+  <div class="card box">
+    <h1>Виртуелна трансформаторска станица 110/20 kV</h1>
+    <p>Прошетај низ отворената 110 kV разводна постројка, влези во командната зграда и кликни на кој било елемент за детален приказ, опис и типични технички податоци. Раставувачите и прекинувачите може да се манипулираат — со вистински блокади.</p>
+    <ul id="ctl"></ul>
+    <p class="mut small">Прототип за настава. Опремата е поедноставена; распоредот и податоците се типични и не се однесуваат на конкретна постројка.</p>
+    <button id="go" class="on">Започни</button>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+'use strict';
+if(!window.THREE){document.getElementById('load').textContent='Не може да се вчита 3D библиотеката.';return;}
+const V3=THREE.Vector3, V2=THREE.Vector2;
+const isTouch=matchMedia('(pointer: coarse)').matches;
+const $=id=>document.getElementById(id);
+const canvas=$('c');
+
+/* ---------- renderer / scene ---------- */
+const renderer=new THREE.WebGLRenderer({canvas,antialias:true,powerPreference:'high-performance'});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,isTouch?1.5:2));
+renderer.setSize(innerWidth,innerHeight,false);
+renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+let shadowsOn=!isTouch;
+
+function skyTex(){const c=document.createElement('canvas');c.width=4;c.height=256;const g=c.getContext('2d');const gr=g.createLinearGradient(0,0,0,256);gr.addColorStop(0,'#6f9cc8');gr.addColorStop(.55,'#b9d0e4');gr.addColorStop(1,'#d6e0e6');g.fillStyle=gr;g.fillRect(0,0,4,256);return new THREE.CanvasTexture(c);}
+const scene=new THREE.Scene();
+scene.background=skyTex();
+scene.fog=new THREE.Fog(0xd6e0e6,90,300);
+const camera=new THREE.PerspectiveCamera(70,innerWidth/innerHeight,0.08,700);
+camera.rotation.order='YXZ';
+scene.add(new THREE.HemisphereLight(0xe2ecf6,0x6b6458,0.78));
+const sun=new THREE.DirectionalLight(0xfff2dc,0.95);
+sun.position.set(-40,70,40);sun.target.position.set(0,0,8);scene.add(sun,sun.target);
+sun.castShadow=shadowsOn;sun.shadow.mapSize.set(2048,2048);
+Object.assign(sun.shadow.camera,{left:-58,right:58,top:58,bottom:-58,near:10,far:220});
+sun.shadow.bias=-0.0005;sun.shadow.normalBias=0.03;
+
+/* ---------- materials & geometry helpers ---------- */
+const std=(c,r=.6,m=.1,x={})=>new THREE.MeshStandardMaterial(Object.assign({color:c,roughness:r,metalness:m},x));
+const M={
+ steel:std(0xa3abb0,.6,.22), steelDark:std(0x717a7e,.65,.22), porc:std(0x5b3020,.22,.05), sil:std(0x7b8287,.75,0),
+ gIns:std(0x46665a,.15,.2), alu:std(0xc8cdd2,.4,.32), tank:std(0x6f7c72,.55,.2), conc:std(0xa8a49b,.92,0),
+ pit:std(0x75716a,1,0), cab:std(0xbcc2bf,.5,.2), cond:std(0xaab0b4,.45,.3), cable:std(0x1c1e21,.6,0),
+ copper:std(0xb87333,.4,.35), wall:std(0xddd5c5,.92,0), roof:std(0x5c6165,.85,.1), floor:std(0x9aa0a3,.8,0),
+ dark:std(0x2a2e33,.5,.2), win:std(0x2c3f4b,.15,.4), glass:std(0x1d3340,.1,.3,{transparent:true,opacity:.45}),
+ red:std(0xc0392b,.5,0), green:std(0x2e8b57,.5,0), swg:std(0xd6d9d7,.45,.2), swgDoor:std(0xc5c9c7,.45,.25),
+ lcd:std(0x6fb7c9,.3,0,{emissive:0x23505c}), white:std(0xeeeeee,.6,0), fan:std(0x4b5257,.6,.2), orange:std(0xd9822b,.4,0),
+ lamp:std(0xffffff,.5,0,{emissive:0xfff3dc,emissiveIntensity:.9})
+};
+function mesh(geo,mat,part){const m=new THREE.Mesh(geo,mat);m.castShadow=true;m.receiveShadow=true;if(part)m.userData.part=part;return m;}
+function at(o,x,y,z){o.position.set(x,y,z);return o;}
+const GC={};const cache=(k,f)=>GC[k]||(GC[k]=f());
+const boxG=(w,h,d)=>cache('b'+w+'_'+h+'_'+d,()=>new THREE.BoxGeometry(w,h,d));
+const cylG=(a,b,h,s=16)=>cache('c'+a+'_'+b+'_'+h+'_'+s,()=>new THREE.CylinderGeometry(a,b,h,s));
+const sphG=r=>cache('s'+r,()=>new THREE.SphereGeometry(r,18,12));
+const torG=(r,t)=>cache('t'+r+'_'+t,()=>new THREE.TorusGeometry(r,t,8,36));
+function insGeo(h,rc,rs,pitch=.075,alt=true){
+ return cache('i'+h+'_'+rc+'_'+rs+'_'+pitch+alt,()=>{
+  const p=[new V2(0,0),new V2(rc,0)];const n=Math.max(1,Math.floor((h-.06)/pitch));const y0=(h-n*pitch)/2;
+  for(let i=0;i<n;i++){const y=y0+i*pitch;const R=(alt&&i%2)?rc+(rs-rc)*.68:rs;
+   p.push(new V2(rc,y),new V2(R,y+pitch*.22),new V2(R*.97,y+pitch*.38),new V2(rc,y+pitch*.78));}
+  p.push(new V2(rc,h),new V2(0,h));return new THREE.LatheGeometry(p,18);});
+}
+function insulator(h,rc,rs,mat,part){
+ const g=new THREE.Group();part=part||'Изолатор';
+ g.add(at(mesh(insGeo(h-.16,rc,rs),mat,part),0,.08,0));
+ const fl=cylG(+(rc*1.7).toFixed(3),+(rc*1.7).toFixed(3),.08,16);const fp='Метална арматура (прирабница)';
+ g.add(at(mesh(fl,M.alu,fp),0,.04,0));g.add(at(mesh(fl,M.alu,fp),0,h-.04,0));return g;
+}
+function column(h,w=.32){
+ const g=new THREE.Group();const P='Челична носива конструкција';
+ g.add(at(mesh(boxG(w,h,w),M.steel,P),0,h/2,0));
+ g.add(at(mesh(boxG(w+.12,.04,w+.12),M.steel,P),0,h,0));
+ g.add(at(mesh(boxG(w+.5,.3,w+.5),M.conc,'Бетонски темел'),0,.15,0));return g;
+}
+function tube(points,r,mat,part,seg){
+ const c=new THREE.CatmullRomCurve3(points);const m=new THREE.Mesh(new THREE.TubeGeometry(c,seg||Math.max(10,points.length*10),r,6,false),mat);
+ m.castShadow=true;m.userData.noCollide=true;if(part)m.userData.part=part;return m;
+}
+function span(a,b,sag,n=8){const p=[];for(let i=0;i<=n;i++){const t=i/n;const v=a.clone().lerp(b,t);v.y-=sag*4*t*(1-t);p.push(v);}return p;}
+function wire(points,r=.022){const m=tube(points,r,M.cond);scene.add(m);return m;}
+function noiseTex(base,cols,n,r,size=256){const c=document.createElement('canvas');c.width=c.height=size;const g=c.getContext('2d');g.fillStyle=base;g.fillRect(0,0,size,size);
+ for(let i=0;i<n;i++){g.fillStyle=cols[i%cols.length];g.beginPath();g.arc(Math.random()*size,Math.random()*size,Math.random()*r+.4,0,7);g.fill();}
+ const t=new THREE.CanvasTexture(c);t.wrapS=t.wrapT=THREE.RepeatWrapping;return t;}
+function labelTex(lines,w,h,bg,fg){const c=document.createElement('canvas');c.width=w;c.height=h;const g=c.getContext('2d');g.fillStyle=bg;g.fillRect(0,0,w,h);g.fillStyle=fg;g.textAlign='center';g.textBaseline='middle';
+ lines.forEach((l,i)=>{g.font=(i?'500 ':'700 ')+l[1]+'px Inter, Arial, sans-serif';g.fillText(l[0],w/2,h*(i+.5)/lines.length);});return new THREE.CanvasTexture(c);}
+function dangerTex(){const w=256,h=230,c=document.createElement('canvas');c.width=w;c.height=h;const g=c.getContext('2d');g.fillStyle='#fff';g.fillRect(0,0,w,h);
+ g.fillStyle='#f4c21b';g.strokeStyle='#111';g.lineWidth=10;g.beginPath();g.moveTo(128,14);g.lineTo(234,170);g.lineTo(22,170);g.closePath();g.fill();g.stroke();
+ g.fillStyle='#111';g.beginPath();g.moveTo(140,48);g.lineTo(104,112);g.lineTo(128,112);g.lineTo(112,156);g.lineTo(156,96);g.lineTo(132,96);g.lineTo(150,48);g.closePath();g.fill();
+ g.font='700 24px Inter, Arial';g.textAlign='center';g.fillText('ОПАСНОСТ ПО ЖИВОТ',128,203);return new THREE.CanvasTexture(c);}
+
+/* ---------- layout constants ---------- */
+const PH=[-2.2,0,2.2];          // phase offsets (local x) L1,L2,L3
+const BZ=[-2.2,0,2.2];          // busbar phases z L1,L2,L3
+const BUSY=8.55;
+const X0=-30,X1=28,Z0=-33,Z1=50; // fence
+
+/* ---------- ground, roads, fence ---------- */
+const grassT=noiseTex('#5d7843',['#6b8a4c','#526b3b','#7a9655','#4b6236'],5000,1.8);grassT.repeat.set(270,270);
+const gravT=noiseTex('#8c8881',['#a8a49c','#6f6c67','#bab5ab','#7c7973','#999389'],7000,1.5);gravT.repeat.set((X1-X0)/3.5,(Z1-Z0)/3.5);
+function flat(w,d,mat,x,y,z){const m=new THREE.Mesh(new THREE.PlaneGeometry(w,d),mat);m.rotation.x=-Math.PI/2;m.position.set(x,y,z);m.receiveShadow=true;m.userData.ground=true;scene.add(m);return m;}
+flat(2400,2400,new THREE.MeshStandardMaterial({map:grassT,roughness:1}),0,-.06,0);
+flat(X1-X0,Z1-Z0,new THREE.MeshStandardMaterial({map:gravT,roughness:1}),(X0+X1)/2,.012,(Z0+Z1)/2);
+const roadM=std(0xa3a09a,.95,0);
+flat(42,4,roadM,7,.03,31.5);flat(150,4.5,roadM,103,.025,31.5);flat(6,4,roadM,1.8,.031,34);
+const trM=std(0x8a867f,.95,0);
+function trench(x0,z0,x1,z1){const w=Math.abs(x1-x0)||.9,d=Math.abs(z1-z0)||.9;const m=mesh(new THREE.BoxGeometry(w,.08,d),trM);m.position.set((x0+x1)/2,.04,(z0+z1)/2);m.userData.noCollide=true;scene.add(m);}
+trench(-18,-8,14,-8);trench(-12,8,12,8);trench(1,-8,1,35);trench(-11,28.2,11,28.2);
+(function fence(){
+ const segs=[[X0,Z0,X1,Z0],[X1,Z0,X1,29.2],[X1,33.8,X1,Z1],[X1,Z1,X0,Z1],[X0,Z1,X0,Z0]];
+ const c=document.createElement('canvas');c.width=c.height=64;const g=c.getContext('2d');g.strokeStyle='#c9cfd2';g.lineWidth=2.2;
+ g.beginPath();g.moveTo(0,0);g.lineTo(64,64);g.moveTo(64,0);g.lineTo(0,64);g.stroke();
+ const t=new THREE.CanvasTexture(c);t.wrapS=t.wrapT=THREE.RepeatWrapping;
+ const fm=new THREE.MeshStandardMaterial({map:t,transparent:true,alphaTest:.35,side:THREE.DoubleSide,metalness:.5,roughness:.5});
+ const posts=[];
+ segs.forEach(([a,b,c2,d])=>{const L=Math.hypot(c2-a,d-b);const geo=new THREE.PlaneGeometry(L,2.1);const uv=geo.attributes.uv;
+  for(let i=0;i<uv.count;i++)uv.setXY(i,uv.getX(i)*L/.6,uv.getY(i)*2.1/.6);
+  const m=new THREE.Mesh(geo,fm);m.position.set((a+c2)/2,1.15,(b+d)/2);m.rotation.y=-Math.atan2(d-b,c2-a);m.userData.noCollide=true;scene.add(m);
+  const n=Math.ceil(L/3);for(let i=0;i<=n;i++)posts.push([a+(c2-a)*i/n,b+(d-b)*i/n]);});
+ const im=new THREE.InstancedMesh(boxG(.07,2.3,.07),M.steel,posts.length);const o=new THREE.Object3D();
+ posts.forEach((p,i)=>{o.position.set(p[0],1.15,p[1]);o.updateMatrix();im.setMatrixAt(i,o.matrix);});im.castShadow=true;scene.add(im);
+ const sg=new THREE.Mesh(new THREE.PlaneGeometry(.5,.45),new THREE.MeshStandardMaterial({map:dangerTex(),roughness:.6}));
+ sg.position.set(X1-.06,1.5,28.6);sg.rotation.y=-Math.PI/2;scene.add(sg);
+ const sg2=sg.clone();sg2.position.set(X1+.06,1.5,28.6);sg2.rotation.y=Math.PI/2;scene.add(sg2);
+})();
+
+/* ---------- equipment builders (local frame: +z points toward the busbar) ---------- */
+function buildDisconnector(withEarth){
+ const g=new THREE.Group(),terms={a:[],b:[]};const H=2.4,IH=1.35,SP=1.25;
+ PH.forEach(dx=>{
+  g.add(at(column(H-.1,.28),dx,0,0));
+  g.add(at(mesh(boxG(.22,.18,2*SP+.5),M.steel,'Основна рамка на полот'),dx,H,0));
+  [1,-1].forEach(s=>{
+   const pv=new THREE.Group();pv.position.set(dx,H+.09,s*SP);
+   pv.add(insulator(IH,.075,.13,M.porc,'Ротационен потпорен изолатор'));
+   pv.add(at(mesh(boxG(.07,.07,SP-.04),M.alu,'Контактен нож (струјна патека)'),0,IH+.06,-s*(SP-.04)/2));
+   const tip=mesh(cylG(.05,.05,.16,10),M.copper,'Главни контакти');tip.rotation.x=Math.PI/2;tip.position.set(0,IH+.06,-s*(SP-.1));pv.add(tip);
+   pv.add(at(mesh(boxG(.12,.03,.2),M.alu,'Приклучок'),0,IH+.1,s*.12));
+   pv.userData.anim={k:'main',o:s>0?Math.PI/2:-Math.PI/2,c:0,axis:'y'};
+   g.add(pv);(s>0?terms.a:terms.b).push(new V3(dx,H+.09+IH+.12,s*(SP+.12)));
+  });
+  if(withEarth){
+   const ep=new THREE.Group();ep.position.set(dx+.32,H+.1,-SP);
+   ep.add(at(mesh(boxG(.05,1.42,.05),M.alu,'Нож на заземјувачот'),0,.71,0));
+   ep.add(at(mesh(boxG(.09,.06,.09),M.copper,'Контакт на заземјувачот'),0,1.42,0));
+   ep.userData.anim={k:'earth',o:Math.PI/2,c:0,axis:'x'};ep.rotation.x=Math.PI/2;g.add(ep);
+   g.add(at(mesh(boxG(.3,.05,.06),M.copper,'Фиксен контакт за заземјување'),dx+.17,H+.09+IH+.02,-SP));
+  }
+ });
+ g.add(at(mesh(boxG(4.5,.06,.06),M.steelDark,'Механичка спрега меѓу половите'),0,H-.16,SP));
+ g.add(at(mesh(boxG(.5,.75,.32),M.cab,'Моторен погон на раставувачот'),0,1.3,.32));
+ if(withEarth){g.add(at(mesh(boxG(4.5,.06,.06),M.steelDark,'Погонска осовина на заземјувачот'),.32,H+.1,-SP));
+  g.add(at(mesh(boxG(.5,.75,.32),M.cab,'Погон на заземјувачот (со блокада)'),0,1.3,-.32));}
+ return {group:g,terms};
+}
+function buildBreaker(){
+ const g=new THREE.Group(),terms={a:[],b:[]};const H=2.4;
+ [-2.9,2.9].forEach(x=>g.add(at(column(H-.15,.34),x,0,0)));
+ g.add(at(mesh(boxG(6.2,.28,.45),M.steel,'Заедничка носива рамка'),0,H,0));
+ PH.forEach(dx=>{
+  g.add(at(insulator(1.55,.1,.17,M.sil,'Потпорен изолатор'),dx,H+.14,0));
+  const y1=H+.14+1.55;
+  g.add(at(mesh(cylG(.2,.2,.32,16),M.alu,'Кукиште на механизмот на полот'),dx,y1+.16,0));
+  g.add(at(mesh(boxG(.14,.04,.22),M.alu,'Приклучок (долен)'),dx,y1+.16,-.3));
+  g.add(at(mesh(cylG(.05,.05,.12,10),M.dark,'Монитор на густина на SF6'),dx+.23,y1+.16,0));
+  g.add(at(insulator(1.25,.15,.23,M.sil,'Гасилна комора (SF6)'),dx,y1+.32,0));
+  const y2=y1+.32+1.25;
+  g.add(at(mesh(cylG(.18,.2,.3,16),M.alu,'Горна капа'),dx,y2+.15,0));
+  g.add(at(mesh(boxG(.14,.04,.22),M.alu,'Приклучок (горен)'),dx,y2+.12,.3));
+  terms.b.push(new V3(dx,y1+.18,-.42));terms.a.push(new V3(dx,y2+.14,.42));
+ });
+ g.add(at(mesh(boxG(.9,1.25,.55),M.cab,'Пружински погонски механизам'),0,H-.14-.625,0));
+ const indMat=M.red.clone();
+ g.add(at(mesh(boxG(.22,.14,.02),indMat,'Покажувач на положба (I / O)'),0,H-.5,.285));
+ g.add(at(mesh(boxG(.22,.14,.02),indMat,'Покажувач на положба (I / O)'),0,H-.5,-.285));
+ return {group:g,terms,indMat};
+}
+function buildCT(){
+ const g=new THREE.Group(),terms={a:[],b:[]};const H=2.2;
+ PH.forEach(dx=>{
+  g.add(at(column(H,.3),dx,0,0));
+  g.add(at(mesh(cylG(.3,.32,.55,18),M.tank,'Подножје (казан)'),dx,H+.315,0));
+  g.add(at(mesh(boxG(.32,.3,.2),M.cab,'Секундарна разводна кутија'),dx,H+.3,.38));
+  g.add(at(insulator(1.9,.13,.23,M.porc,'Порцеланска изолација (маслено-хартиена)'),dx,H+.59,0));
+  const yh=H+.59+1.9;
+  g.add(at(mesh(cylG(.36,.3,.55,18),M.alu,'Глава со примарен спроводник и јадра'),dx,yh+.275,0));
+  const d=mesh(sphG(.36),M.alu,'Метален мев (компензатор на масло)');d.position.set(dx,yh+.55,0);d.scale.y=.45;g.add(d);
+  g.add(at(mesh(cylG(.05,.05,.04,12),M.dark,'Покажувач на ниво на масло'),dx+.3,yh+.45,.18));
+  [1,-1].forEach(s=>{g.add(at(mesh(boxG(.12,.16,.18),M.copper,s>0?'Примарен приклучок P1':'Примарен приклучок P2'),dx,yh+.3,s*.45));
+   (s>0?terms.a:terms.b).push(new V3(dx,yh+.3,s*.55));});
+ });
+ return {group:g,terms};
+}
+function buildCVT(){
+ const g=new THREE.Group(),terms={a:[]};const H=2.0;
+ PH.forEach(dx=>{
+  g.add(at(column(H,.32),dx,0,0));
+  g.add(at(mesh(boxG(.6,.75,.6),M.tank,'Електромагнетна единица (подножје)'),dx,H+.415,0));
+  g.add(at(mesh(boxG(.3,.32,.18),M.cab,'Секундарна разводна кутија'),dx,H+.4,.39));
+  const P='Кондензаторски столб (капацитивен делител)';
+  g.add(at(insulator(1.35,.14,.24,M.porc,P),dx,H+.79,0));g.add(at(insulator(1.35,.14,.24,M.porc,P),dx,H+.79+1.35,0));
+  const yt=H+.79+2.7;
+  g.add(at(mesh(cylG(.2,.24,.2,16),M.alu,'Горна капа'),dx,yt+.1,0));
+  g.add(at(mesh(cylG(.04,.04,.14,8),M.alu,'Приклучок'),dx,yt+.27,0));terms.a.push(new V3(dx,yt+.34,0));
+ });
+ return {group:g,terms};
+}
+function buildVT(){
+ const g=new THREE.Group(),terms={a:[]};const H=2.2;
+ PH.forEach(dx=>{
+  g.add(at(column(H,.3),dx,0,0));
+  g.add(at(mesh(cylG(.34,.36,.75,18),M.tank,'Казан со јадро и намотки'),dx,H+.415,0));
+  g.add(at(mesh(boxG(.3,.3,.2),M.cab,'Секундарна разводна кутија'),dx,H+.35,.42));
+  g.add(at(insulator(1.7,.12,.21,M.porc,'Порцеланска изолација'),dx,H+.79,0));
+  const yt=H+.79+1.7;
+  g.add(at(mesh(cylG(.2,.22,.26,16),M.alu,'Глава (компензатор на масло)'),dx,yt+.13,0));
+  g.add(at(mesh(cylG(.04,.04,.14,8),M.alu,'Примарен приклучок'),dx,yt+.33,0));terms.a.push(new V3(dx,yt+.4,0));
+ });
+ return {group:g,terms};
+}
+function buildSA(){
+ const g=new THREE.Group(),terms={a:[]};const H=2.1;
+ PH.forEach(dx=>{
+  g.add(at(column(H,.26),dx,0,0));
+  g.add(at(mesh(cylG(.13,.13,.12,12),M.dark,'Изолирано подножје'),dx,H+.08,0));
+  g.add(at(insulator(1.45,.085,.155,M.sil,'ZnO варистори во силиконско куќиште'),dx,H+.14,0));
+  const yt=H+.14+1.45;
+  g.add(at(mesh(cylG(.12,.12,.12,14),M.alu,'Горна капа'),dx,yt+.06,0));
+  const ring=mesh(torG(.32,.025),M.alu,'Прстен за изедначување на потенцијалот');ring.rotation.x=Math.PI/2;ring.position.set(dx,yt-.1,0);g.add(ring);
+  [0,Math.PI/2,Math.PI,Math.PI*1.5].forEach(a=>{const r=mesh(boxG(.3,.02,.02),M.alu,'Прстен за изедначување на потенцијалот');r.position.set(dx+Math.cos(a)*.17,yt-.1,Math.sin(a)*.17);r.rotation.y=-a;g.add(r);});
+  g.add(at(mesh(cylG(.035,.035,.16,8),M.alu,'Приклучок'),dx,yt+.2,0));terms.a.push(new V3(dx,yt+.28,0));
+  g.add(at(mesh(boxG(.16,.2,.1),M.dark,'Бројач на прорадувања'),dx,1.45,.2));
+  g.add(at(mesh(cylG(.07,.07,.02,12),M.white,'Бројач на прорадувања'),dx,1.47,.255).rotateX(Math.PI/2));
+  g.add(at(mesh(boxG(.03,H-.4,.03),M.copper,'Заземјувачки спроводник'),dx+.17,(H)/2+.25,.18));
+ });
+ return {group:g,terms};
+}
+function buildTransformer(){
+ const g=new THREE.Group(),terms={a:[]};const T=M.tank;
+ g.add(at(mesh(boxG(10.4,.32,6.8),M.pit,'Јама за собирање масло (исполнета со чакал)'),0,.16,0));
+ [-.9,.9].forEach(z=>g.add(at(mesh(boxG(9.6,.1,.12),M.steelDark,'Шини за транспорт'),0,.37,z)));
+ [[-2.4,-.9],[2.4,-.9],[-2.4,.9],[2.4,.9]].forEach(([x,z])=>{const w=mesh(cylG(.18,.18,.12,14),M.steelDark,'Тркала за транспорт');w.rotation.x=Math.PI/2;w.position.set(x,.56,z);g.add(w);});
+ g.add(at(mesh(boxG(6.6,.2,2.6),M.steelDark,'Основна рамка'),0,.72,0));
+ g.add(at(mesh(boxG(6.4,2.9,2.5),T,'Казан (активен дел потопен во масло)'),0,2.27,0));
+ [-2.4,-.8,.8,2.4].forEach(x=>[1,-1].forEach(s=>g.add(at(mesh(boxG(.12,2.9,.1),T,'Засилувачи на казанот'),x,2.27,s*1.3))));
+ g.add(at(mesh(boxG(6.6,.12,2.7),T,'Капак на казанот'),0,3.78,0));
+ const TOP=3.84;
+ [1,-1].forEach(s=>{
+  for(let i=0;i<9;i++)g.add(at(mesh(boxG(.95,2.3,.045),T,'Радијатори'),s*3.8,2.25,-1+i*.25));
+  g.add(at(mesh(boxG(.6,.14,2.2),T,'Радијатори'),s*3.5,3.33,0));g.add(at(mesh(boxG(.6,.14,2.2),T,'Радијатори'),s*3.5,1.17,0));
+  [-.55,.55].forEach(z=>{const f=mesh(cylG(.36,.36,.22,18),M.fan,'Вентилатори (ладење ONAF)');f.rotation.z=Math.PI/2;f.position.set(s*4.45,2.25,z);g.add(f);});
+ });
+ g.add(at(mesh(boxG(1.3,2.6,.8),T,'Регулациона склопка под оптоварување (OLTC)'),-2.1,2.3,-1.65));
+ g.add(at(mesh(boxG(.6,.95,.32),M.cab,'Моторен погон на регулационата склопка'),-2.1,1.25,-2.21));
+ g.add(at(mesh(boxG(1.1,1.5,.4),M.cab,'Орман за управување на трансформаторот'),2.3,1.75,1.5));
+ g.add(at(mesh(boxG(.4,.3,.02),M.white,'Натписна плочка'),1.6,1.6,1.36));
+ PH.forEach(dx=>{
+  g.add(at(mesh(cylG(.27,.27,.45,16),T,'Купола на проводниот изолатор'),dx,TOP+.225,-.75));
+  g.add(at(insulator(2.3,.12,.21,M.porc,'Проводен изолатор 110 kV'),dx,TOP+.45,-.75));
+  g.add(at(mesh(cylG(.13,.16,.22,14),M.alu,'Глава на проводниот изолатор'),dx,TOP+.45+2.3+.11,-.75));
+  terms.a.push(new V3(dx,TOP+.45+2.3+.3,-.75));
+ });
+ g.add(at(mesh(cylG(.18,.18,.3,14),T,'Проводен изолатор за ѕвездиште (неутрала)'),3.0,TOP+.15,.1));
+ g.add(at(insulator(1.2,.08,.14,M.porc,'Проводен изолатор за ѕвездиште (неутрала)'),3.0,TOP+.3,.1));
+ [-1.1,0,1.1].forEach(lx=>{
+  g.add(at(insulator(.75,.09,.16,M.porc,'Проводен изолатор 20 kV'),lx,TOP,.8));
+  g.add(at(mesh(cylG(.06,.09,.35,10),M.cable,'Кабелска завршница 20 kV'),lx,TOP+.92,.8));
+  g.add(tube([new V3(lx,TOP+1.08,.8),new V3(lx,TOP+1.35,1.3),new V3(lx,TOP+.6,1.9),new V3(lx,1.2,2.05),new V3(lx,.25,2.5),new V3(lx,-.3,3.3)],.045,M.cable,'Кабли 20 kV (кон командната зграда)',40));
+ });
+ const cons=mesh(cylG(.5,.5,3.4,20),T,'Конзерватор (дилатациски сад за масло)');cons.rotation.z=Math.PI/2;cons.position.set(-.8,5.65,1.0);g.add(cons);
+ [-2.1,.5].forEach(x=>g.add(at(mesh(boxG(.12,1.4,.12),T,'Носач на конзерваторот'),x,TOP+.7,1.0)));
+ const gl=mesh(cylG(.16,.16,.04,16),M.white,'Покажувач на ниво на масло');gl.rotation.z=Math.PI/2;gl.position.set(-2.52,5.65,1.0);g.add(gl);
+ g.add(at(mesh(cylG(.05,.05,1.31,10),T,'Цевка кон конзерваторот'),-1.6,4.5,1.0));
+ g.add(at(mesh(boxG(.26,.2,.22),M.cab,'Бухолц-реле'),-1.6,4.5,1.0));
+ g.add(at(mesh(cylG(.09,.09,.45,12),M.orange,'Сушач на воздух (силикагел)'),-2.9,1.7,1.42));
+ return {group:g,terms};
+}
+function buildGantry(){
+ const g=new THREE.Group(),terms={a:[]};const H=12,HW=5.4;
+ [-HW,HW].forEach(x=>{
+  g.add(at(mesh(boxG(1.3,.45,1.3),M.conc,'Бетонски темел'),x,.22,0));
+  g.add(at(mesh(new THREE.CylinderGeometry(.22,.55,H,4),M.steel,'Решеткаст столб'),x,H/2,0).rotateY(Math.PI/4));
+  g.add(at(mesh(cylG(.025,.06,3,6),M.alu,'Громобрански шилец'),x,H+1.5,0));
+ });
+ g.add(at(mesh(boxG(2*HW+.8,.7,.7),M.steel,'Попречна греда (траверза)'),0,H-.35,0));
+ PH.forEach(dx=>{
+  const s=mesh(insGeo(1.6,.025,.13,.15,false),M.gIns,'Затезен изолаторски синџир');s.rotation.x=-Math.PI/2;s.position.set(dx,H-.55,-.35);g.add(s);
+  terms.a.push(new V3(dx,H-.55,-2.0));
+ });
+ return {group:g,terms};
+}
+function buildBus(){
+ const g=new THREE.Group();const XS=[-21,-10,0,10,19],BX0=-22.5,BX1=20;
+ BZ.forEach(z=>{
+  XS.forEach(x=>{g.add(at(column(6.8,.32),x,0,z));g.add(at(insulator(1.6,.1,.17,M.porc,'Потпорен изолатор'),x,6.82,z));g.add(at(mesh(boxG(.22,.1,.18),M.alu,'Стега за цевката'),x,8.47,z));});
+  const t=mesh(cylG(.06,.06,BX1-BX0,14),M.alu,'Цевни собирници (AlMgSi)');t.rotation.z=Math.PI/2;t.position.set((BX0+BX1)/2,BUSY,z);g.add(t);
+  [BX0,BX1].forEach(x=>g.add(at(mesh(sphG(.075),M.alu,'Завршна капа'),x,BUSY,z)));
+ });
+ return {group:g,terms:{}};
+}
+function buildMast(){
+ const g=new THREE.Group();
+ g.add(at(mesh(boxG(1.2,.5,1.2),M.conc,'Бетонски темел'),0,.25,0));
+ g.add(at(mesh(cylG(.12,.38,22,8),M.steel,'Челичен столб'),0,11.5,0));
+ g.add(at(mesh(cylG(.015,.04,2.5,6),M.alu,'Громобрански шилец (фаќач)'),0,23.75,0));
+ g.add(at(mesh(boxG(.06,.6,.03),M.copper,'Приклучок на заземјувањето'),.4,.8,0));
+ return {group:g,terms:{}};
+}
+function buildFirewall(){const g=new THREE.Group();g.add(at(mesh(boxG(.3,7.5,9),M.conc,'Армирано-бетонски ѕид'),0,3.75,0));return {group:g,terms:{}};}
+function buildSWG(n=12){
+ const g=new THREE.Group();const w=.8,x0=-(n*w)/2+w/2;
+ for(let i=0;i<n;i++){const cx=x0+i*w;
+  g.add(at(mesh(boxG(.78,2.3,1.5),M.swg,'Метален оклоп на ќелијата'),cx,1.15,0));
+  g.add(at(mesh(boxG(.66,.95,.03),M.swgDoor,'Прекинувачки оддел (вакуумски прекинувач на количка)'),cx,.8,-.765));
+  g.add(at(mesh(boxG(.2,.14,.02),M.dark,'Прозорче за положбата на количката'),cx,.98,-.785));
+  g.add(at(mesh(boxG(.66,.5,.03),M.swgDoor,'Нисконапонски оддел (заштита и управување)'),cx,1.88,-.765));
+  g.add(at(mesh(boxG(.16,.12,.02),M.lcd,'Нумеричко реле'),cx-.14,1.92,-.785));
+  g.add(at(mesh(boxG(.05,.05,.02),M.red,'Сигнални ламби'),cx+.12,1.95,-.785));
+  g.add(at(mesh(boxG(.05,.05,.02),M.green,'Сигнални ламби'),cx+.22,1.95,-.785));
+  g.add(at(mesh(boxG(.56,.035,.01),M.dark,'Мнемоничка шема'),cx,1.48,-.775));
+  g.add(at(mesh(boxG(.78,.22,1.2),M.swg,'Канал за растоварување на притисок од лак'),cx,2.41,.1));
+ }
+ return {group:g,terms:{}};
+}
+function buildRelay(n=7){
+ const g=new THREE.Group();const w=.8,x0=-(n*w)/2+w/2;
+ for(let i=0;i<n;i++){const cx=x0+i*w;
+  g.add(at(mesh(boxG(.78,2.1,.6),M.cab,'Орман'),cx,1.15,0));
+  g.add(at(mesh(boxG(.78,.1,.6),M.dark,'Подножје'),cx,.05,0));
+  [1.75,1.35,.95].forEach(y=>{g.add(at(mesh(boxG(.5,.26,.1),M.dark,'Нумеричко реле (заштита на поле)'),cx,y,-.27));g.add(at(mesh(boxG(.14,.09,.01),M.lcd,'Нумеричко реле (заштита на поле)'),cx-.12,y+.03,-.325));});
+  g.add(at(mesh(boxG(.7,1.85,.02),M.glass,'Стаклена врата'),cx,1.2,-.34));
+ }
+ return {group:g,terms:{}};
+}
+function buildAux(){
+ const g=new THREE.Group();
+ g.add(at(mesh(boxG(2.6,.3,2.2),M.conc,'Бетонски темел'),0,.15,0));
+ g.add(at(mesh(boxG(1.4,1.3,.9),M.tank,'Казан'),0,.95,0));
+ [1,-1].forEach(s=>{for(let i=0;i<5;i++)g.add(at(mesh(boxG(.04,1.0,.28),M.tank,'Ребра за ладење'),-.5+i*.25,.95,s*.59));});
+ [-.35,0,.35].forEach(x=>g.add(at(insulator(.45,.05,.09,M.porc,'Проводен изолатор 20 kV'),x,1.6,-.22)));
+ [-.45,-.15,.15,.45].forEach(x=>g.add(at(mesh(cylG(.04,.05,.22,10),M.porc,'Проводен изолатор 0,4 kV'),x,1.71,.25)));
+ g.add(at(mesh(boxG(.25,.3,.02),M.white,'Натписна плочка'),.4,.95,-.46));
+ return {group:g,terms:{}};
+}
+
+/* ---------- element registry ---------- */
+const ELS=[],BAYS={},ORDER=[];
+function place(type,built,bay,x,z,rotY,name,view){
+ const g=built.group;g.position.set(x,0,z);g.rotation.y=rotY||0;scene.add(g);g.updateMatrixWorld(true);
+ const id=ELS.length;g.traverse(o=>{if(o.isMesh)o.userData.el=id;});
+ const el={id,type,name,bay,group:g,terms:{},indMat:built.indMat,state:{},view};
+ for(const k in built.terms)el.terms[k]=built.terms[k].map(v=>g.localToWorld(v.clone()));
+ el.anims=[];g.traverse(o=>{if(o.userData.anim)el.anims.push(o);});
+ if(type==='cb')el.state={closed:true};
+ if(type==='ds'||type==='dse')el.state={open:false,earth:false};
+ ELS.push(el);
+ if(!BAYS[bay]){BAYS[bay]={name:bay,els:[]};ORDER.push(bay);}
+ BAYS[bay].els.push(el);if(type==='cb')BAYS[bay].cb=el;
+ return el;
+}
+function busDrop(p,k){const q=new V3(p.x,BUSY,BZ[k]);wire([p,new V3(p.x,p.y+.8,p.z+(q.z-p.z)*.22),new V3(p.x,BUSY-.6,p.z+(q.z-p.z)*.8),q]);}
+function nearestX(list,p){let b=list[0];list.forEach(v=>{if(Math.abs(v.x-p.x)<Math.abs(b.x-p.x))b=v;});return b;}
+
+function buildTower(x,z){
+ const g=new THREE.Group();
+ g.add(at(new THREE.Mesh(new THREE.CylinderGeometry(.45,1.6,26,4),M.steel),0,13,0).rotateY(Math.PI/4));
+ g.add(at(new THREE.Mesh(boxG(9,.5,.6),M.steel),0,18,0));g.add(at(new THREE.Mesh(boxG(3,.35,.4),M.steel),0,25.4,0));
+ const pts=[];PH.forEach(dx=>{const xx=dx*1.8;const s=new THREE.Mesh(insGeo(1.5,.025,.13,.15,false),M.gIns);s.position.set(xx,16.25,0);g.add(s);pts.push(new V3(x+xx,16.2,z));});
+ g.position.set(x,0,z);g.traverse(o=>{if(o.isMesh)o.castShadow=true;});scene.add(g);return pts;
+}
+
+function lineBay(name,x){
+ const bd=place('ds',buildDisconnector(false),name,x,-5.5,0,'Собирнички раставувач');
+ const cb=place('cb',buildBreaker(),name,x,-10.5,0,'Прекинувач 110 kV');
+ const ct=place('ct',buildCT(),name,x,-15,0,'Струен мерен трансформатор');
+ const ld=place('dse',buildDisconnector(true),name,x,-19.5,0,'Линиски раставувач со заземјувач');
+ const cv=place('cvt',buildCVT(),name,x,-23.5,0,'Капацитивен напонски мерен трансформатор');
+ const sa=place('sa',buildSA(),name,x,-26.5,0,'Одводник на пренапони');
+ const gn=place('gantry',buildGantry(),name,x,-29.5,0,'Влезен портал',{pos:[x+3.8,-16.5],look:[x,8.5,-29.5]});
+ const tw=buildTower(x,-62);
+ for(let k=0;k<3;k++){
+  busDrop(bd.terms.a[k],k);
+  wire(span(bd.terms.b[k],cb.terms.a[k],.15));wire(span(cb.terms.b[k],ct.terms.a[k],.1));wire(span(ct.terms.b[k],ld.terms.a[k],.1));
+  const dx=bd.terms.a[k].x;const pS=new V3(dx,6.6,-26.5),pC=new V3(dx,6.4,-23.5);
+  wire([gn.terms.a[k],new V3(dx,10.6,-30.7),new V3(dx,9.7,-28.9),new V3(dx,7.6,-27.6),pS,pC,ld.terms.b[k]]);
+  wire([pS,sa.terms.a[k]]);wire([pC,cv.terms.a[k]]);
+  wire(span(gn.terms.a[k],tw[k],1.2,14));wire(span(tw[k],new V3(tw[k].x,15.5,-230),5,24));
+ }
+}
+function trBay(name,x,trName){
+ const bd=place('ds',buildDisconnector(false),name,x,5.5,Math.PI,'Собирнички раставувач');
+ const cb=place('cb',buildBreaker(),name,x,10.5,Math.PI,'Прекинувач 110 kV');
+ const ct=place('ct',buildCT(),name,x,15,Math.PI,'Струен мерен трансформатор');
+ const sa=place('sa',buildSA(),name,x,19.3,Math.PI,'Одводник на пренапони');
+ const tr=place('tr',buildTransformer(),name,x,24.5,0,trName,{pos:[x+(x>0?3.5:-3.5),32.8],look:[x,3.2,24.5]});
+ for(let k=0;k<3;k++){
+  busDrop(bd.terms.a[k],k);
+  wire(span(bd.terms.b[k],cb.terms.a[k],.15));wire(span(cb.terms.b[k],ct.terms.a[k],.1));
+  const p=ct.terms.b[k],hv=nearestX(tr.terms.a,p),sp=nearestX(sa.terms.a,p);const xx=p.x;
+  const pS=new V3(xx,6.6,19.3);
+  wire([p,new V3(xx,5.9,17.3),pS,new V3(xx,7.1,21.8),hv]);wire([pS,sp]);
+ }
+}
+lineBay('ДВ поле 1',-15);
+lineBay('ДВ поле 2',-3);
+(function measBay(){const n='Мерно поле 110 kV',x=12;
+ const bd=place('ds',buildDisconnector(false),n,x,-5.5,0,'Собирнички раставувач');
+ const vt=place('vt',buildVT(),n,x,-10.5,0,'Индуктивен напонски мерен трансформатор');
+ for(let k=0;k<3;k++){busDrop(bd.terms.a[k],k);wire(span(bd.terms.b[k],vt.terms.a[k],.15));}
+})();
+place('bus',buildBus(),'Собирници 110 kV',0,0,0,'Собирници 110 kV',{pos:[-.5,-7.5],look:[-1,7.5,0]});
+trBay('ТР поле Т1',-7,'Енергетски трансформатор Т1');
+trBay('ТР поле Т2',7,'Енергетски трансформатор Т2');
+place('fw',buildFirewall(),'Општо',0,24.5,0,'Противпожарен ѕид',{pos:[0,31.5],look:[0,3,24.5]});
+[[-27,4],[25,4],[-27,27],[25,22]].forEach(([x,z],i)=>place('mast',buildMast(),'Општо',x,z,0,'Громобрански столб '+(i+1),{pos:[x+(x<0?5:-5),z],look:[x,9,z]}));
+place('aux',buildAux(),'Општо',17.5,38,0,'Трансформатор за сопствена потрошувачка',{pos:[17.5,34.6],look:[17.5,1,38]});
+
+/* ---------- control building ---------- */
+const BLD=new THREE.Group();
+(function building(){
+ const bx0=-10,bx1=14,bz0=35,bz1=45,H=4.6,t=.3;
+ const wall=(x0,x1,z0,z1,y0,y1,mat)=>{const m=mesh(new THREE.BoxGeometry(x1-x0,y1-y0,z1-z0),mat||M.wall);m.position.set((x0+x1)/2,(y0+y1)/2,(z0+z1)/2);BLD.add(m);return m;};
+ wall(bx0,1.0,bz0,bz0+t,0,H);wall(2.6,bx1,bz0,bz0+t,0,H);wall(1.0,2.6,bz0,bz0+t,2.5,H);
+ wall(bx0,bx1,bz1-t,bz1,0,H);wall(bx0,bx0+t,bz0,bz1,0,H);wall(bx1-t,bx1,bz0,bz1,0,H);
+ wall(bx0-.3,bx1+.3,bz0-.3,bz1+.3,H,H+.35,M.roof);
+ const fl=wall(bx0,bx1,bz0,bz1,0,.06,M.floor);fl.userData.ground=true;
+ [-7.5,-4,5.5,9,12].forEach(x=>{const w=mesh(boxG(1.4,1.0,.04),M.win);w.position.set(x,1.9,bz0-.02);BLD.add(w);});
+ const dl=mesh(boxG(.06,2.4,1.5),M.steelDark);dl.position.set(1.0,1.2,bz0-.75);BLD.add(dl);
+ const sign=new THREE.Mesh(new THREE.PlaneGeometry(3.4,.75),new THREE.MeshStandardMaterial({map:labelTex([['ТС 110/20 kV',64],['Командна зграда',40]],512,112,'#24384a','#f2f2f2'),roughness:.6}));
+ sign.position.set(1.8,3.4,bz0-.03);sign.rotation.y=Math.PI;BLD.add(sign);
+ const ds=new THREE.Mesh(new THREE.PlaneGeometry(.5,.45),new THREE.MeshStandardMaterial({map:dangerTex(),roughness:.6}));ds.position.set(3.1,1.6,bz0-.03);ds.rotation.y=Math.PI;BLD.add(ds);
+ [[-5,40],[2,40],[9,40]].forEach(([x,z])=>{BLD.add(at(new THREE.Mesh(boxG(1.2,.06,.3),M.lamp),x,H-.05,z));const L=new THREE.PointLight(0xfff1dc,.42,14);L.position.set(x,H-.4,z);BLD.add(L);});
+ scene.add(BLD);
+})();
+place('swg',buildSWG(12),'Командна зграда',-3.5,43.9,0,'20 kV постројка (метално оклопени ќелии)',{pos:[-3.5,38.6],look:[-3.5,1.3,43.9]});
+place('relay',buildRelay(7),'Командна зграда',9,39.6,0,'Ормани за заштита и управување',{pos:[9,36.6],look:[9,1.3,39.6]});
+
+/* ---------- descriptive content ---------- */
+const INFO={
+ cb:{en:'SF6 circuit breaker (live tank)',p:['Прекинувачот е единствениот апарат во полето што може безбедно да вклучува и исклучува работни струи и струи на куса врска. При исклучување, лакот меѓу контактите се гасне во гасот SF6 (сулфур хексафлуорид), кој има многу добри изолациони и гасилни својства.','Ова е изведба „live tank“: гасилната комора е на висок потенцијал, поставена на потпорен изолатор. Трите пола се на заедничка рамка и ги задвижува пружински погонски механизам. Командата за исклучување ја дава релејната заштита при дефект, или операторот при манипулација.'],
+  d:[['Номинален напон','123 kV'],['Номинална струја','3150 A'],['Номинална прекинувачка струја на КВ','31,5 kA'],['Ударен издржлив напон (BIL)','550 kV'],['Работен циклус','O – 0,3 s – CO – 3 min – CO'],['Медиум за гаснење','SF6'],['Погон','пружински']]},
+ ds:{en:'Busbar disconnector (centre-break)',p:['Раставувачот служи за видливо одвојување на дел од постројката, за да може безбедно да се работи на него. Тој не може да прекинува струја на оптоварување — затоа смее да се манипулира само кога прекинувачот во полето е исклучен.','Ова е двостолбен раставувач со хоризонтално (централно) отворање: двата потпорни изолатори ротираат за 90° во спротивни насоки, а контактните ножеви се одвојуваат во средината. Собирничкиот раставувач го поврзува полето со собирниците.'],
+  d:[['Номинален напон','123 kV'],['Номинална струја','1250 A'],['Издржлива струја на кратко траење','31,5 kA / 1 s'],['Погон','моторен (и рачен)']],
+  note:'Вообичаен редослед при исклучување на ДВ поле: прекинувач → линиски раставувач → собирнички раставувач. При вклучување — обратно.'},
+ dse:{en:'Line disconnector with earthing switch',p:['Линискиот раставувач го одвојува далекуводот од полето. На него е вграден заземјувач (ножеви за заземјување): по исклучувањето и проверката за отсуство на напон, со него далекуводот се поврзува со заземјувачот на постројката, за да се заштити екипата што работи на водот.','Раставувачот и заземјувачот се меѓусебно блокирани: заземјувачот може да се вклучи само кога раставувачот е отворен, а раставувачот може да се затвори само кога заземјувачот е исклучен.'],
+  d:[['Номинален напон','123 kV'],['Номинална струја','1250 A'],['Издржлива струја на кратко траење','31,5 kA / 1 s'],['Заземјувач','со механичка и електрична блокада']],
+  note:'Обиди се: исклучи го прекинувачот во полето, отвори го раставувачот, па вклучи го заземјувачот. Обратниот редослед е блокиран.'},
+ ct:{en:'Current transformer',p:['Струјниот мерен трансформатор ја намалува примарната струја на стандардна секундарна вредност (1 A или 5 A) за мерење, обрачун на енергија и релејна заштита. Има повеќе секундарни јадра — мерно (на пр. класа 0,2S) и заштитни (на пр. 5P20).','Ова е изведба со јадра во главата: примарниот спроводник минува низ главата на врвот, а секундарните намотки се изведени низ изолаторот до разводната кутија во подножјето. Изолацијата е маслено-хартиена.'],
+  d:[['Номинален напон','123 kV'],['Преносен однос (пример)','2×400 / 1 / 1 / 1 A'],['Јадра','0,2S · 5P20 · 5P20'],['Термичка струја','31,5 kA / 1 s']],
+  note:'Секундарното коло на СМТ никогаш не смее да остане отворено додека тече примарна струја — се индуцираат опасно високи напони.'},
+ cvt:{en:'Capacitive voltage transformer (CVT)',p:['Капацитивниот напонски мерен трансформатор се состои од капацитивен делител (кондензаторски столб) и електромагнетна единица во подножјето, која го сведува напонот на стандардна секундарна вредност.','Се поставува на влезот на далекуводот за мерење, заштита (на пр. дистантна заштита) и синхронизација. Преку кондензаторскиот столб може да се приклучи и високофреквентна (ВФ) телекомуникациска врска по проводниците на далекуводот.'],
+  d:[['Примарен напон','110/√3 kV'],['Секундарни напони','100/√3 V · 100/3 V'],['Класа на точност','0,5 · 3P']]},
+ vt:{en:'Inductive voltage transformer',p:['Индуктивниот напонски мерен трансформатор работи како обичен трансформатор со железно јадро. Во мерното поле, три еднополни НМТ го мерат напонот на собирниците — за мерење, синхронизација и напонски заштити.'],
+  d:[['Примарен напон','110/√3 kV'],['Секундарни напони','100/√3 V · 100/3 V'],['Класа на точност','0,2 · 3P']],note:'Секундарното коло на НМТ не смее да се кратко споји.'},
+ sa:{en:'Surge arrester (ZnO)',p:['Одводникот на пренапони ја штити опремата — пред сè трансформаторот и влезот на далекуводот — од атмосферски и комутациски пренапони. Металоксидните (ZnO) варистори имаат силно нелинеарна карактеристика: при работен напон пропуштаат занемарливо мала струја, а при пренапон стануваат спроводни и енергијата ја одведуваат во заземјувањето.','Се поставува што поблиску до штитениот објект. Бројачот на прорадувања во подножјето ги регистрира празнењата.'],
+  d:[['Номинален напон Ur (тип.)','96 – 108 kV'],['Номинална струја на празнење','10 kA'],['Куќиште','силиконска гума'],['Поврзување','фаза – земја']]},
+ bus:{en:'Busbars',p:['Собирниците се заедничкиот јазол на кој се приклучуваат сите полиња. Овде се изведени како алуминиумски цевки на потпорни изолатори, на висина од околу 8,5 m.','Во оваа поедноставена постројка има еден систем собирници. Поголемите 110 kV постројки најчесто имаат двоен систем собирници со спојно поле, што овозможува префрлање на полињата без прекин на напојувањето.'],
+  d:[['Номинален напон','110 kV (Um = 123 kV)'],['Изведба','AlMgSi цевка на потпорни изолатори'],['Растојание меѓу фазите','≈ 2,2 m']]},
+ tr:{en:'Power transformer 110/20 kV',p:['Енергетскиот трансформатор го трансформира напонот од 110 kV на 20 kV за дистрибутивната мрежа. Активниот дел (јадро и намотки) е потопен во трансформаторско масло, кое служи за изолација и ладење.','Напонот се регулира под оптоварување со регулациона склопка (OLTC) на 110 kV страна. Конзерваторот ги прифаќа промените на волуменот на маслото со температурата; Бухолц-релето реагира на гасови и нагли протоци на масло при внатрешни дефекти. Ладењето е со радијатори — природно (ONAN) или со вентилатори (ONAF).','Под трансформаторот има јама за собирање масло, а меѓу двата трансформатори — противпожарен ѕид.'],
+  d:[['Номинална моќност (пример)','31,5 MVA'],['Преносен однос','110 ± 10×1,5 % / 21 kV'],['Група на спрега (пример)','YNd5'],['Напон на куса врска','uk ≈ 11 %'],['Ладење','ONAN / ONAF']]},
+ gantry:{en:'Line entrance gantry',p:['На влезниот портал завршуваат проводниците на далекуводот, прицврстени со затезни изолаторски синџири. Од порталот, преку спуштачи, проводниците се поврзуваат со опремата во полето.','На врвовите на столбовите има громобрански шилци, кои заедно со громобранските столбови ја штитат постројката од директен удар на гром.'],d:[['Висина на траверзата','≈ 12 m'],['Изолација','стаклени капести изолатори']]},
+ mast:{en:'Lightning mast',p:['Громобранските столбови, заедно со шилците на порталите, формираат зона на заштита на опремата од директни удари на гром. Зоната се пресметува, на пример, со методот на тркалачка сфера. Секој громобран е поврзан со заземјувачката мрежа на постројката.'],d:[['Висина','≈ 25 m']]},
+ fw:{en:'Fire wall',p:['Армирано-бетонски ѕид меѓу двата трансформатори, кој спречува пожар на едниот трансформатор да се пренесе на другиот. Под секој трансформатор има јама за собирање масло, исполнета со чакал.'],d:[]},
+ swg:{en:'Indoor MV switchgear 20 kV',p:['Страната 20 kV е изведена како внатрешна постројка со метално оклопени ќелии. Секоја ќелија има посебни оддели: прекинувачки оддел со вакуумски прекинувач на извлеклива количка, оддел за собирници, кабелски оддел со струјни мерни трансформатори и заземјувач, и нисконапонски оддел со релејна заштита.','Типови ќелии: доводни (од трансформаторите), изводни (кон 20 kV водовите), мерна, спојна и ќелија за трансформаторот за сопствена потрошувачка.'],
+  d:[['Номинален напон','24 kV'],['Струја на собирниците','1250 A'],['Издржлива струја (пример)','16 kA / 3 s'],['Прекинувачи','вакуумски']]},
+ relay:{en:'Protection & control panels',p:['Во командната зграда се орманите за заштита, управување и мерење. Нумеричките релеи ги штитат полињата: дистантна заштита за далекуводите, диференцијална заштита за трансформаторите, собирничка заштита.','Уредите за управување на ниво на поле и станичниот компјутер комуницираат со диспечерскиот центар (SCADA), на пример според IEC 61850.'],d:[]},
+ aux:{en:'Station service transformer',p:['Трансформаторот за сопствена потрошувачка (ТСП) ја напојува потрошувачката на самата постројка: осветлување, греење, моторни погони и полначи за акумулаторската батерија, која дава еднонасочен напон за заштита и управување.'],d:[['Преносен однос','20 / 0,4 kV'],['Моќност (пример)','100 – 250 kVA']]}
+};
+
+/* ---------- colliders ---------- */
+scene.updateMatrixWorld(true);
+const COLL=[];
+scene.traverse(o=>{if(!o.isMesh||o.isInstancedMesh||o.userData.noCollide||o.userData.ground)return;
+ const b=new THREE.Box3().setFromObject(o);if(b.min.y<1.75&&b.max.y>.35&&b.max.x-b.min.x<30&&b.max.z-b.min.z<30)COLL.push([b.min.x,b.min.z,b.max.x,b.max.z]);});
+const R=.3;
+function hit(x,z){for(const c of COLL)if(x+R>c[0]&&x-R<c[2]&&z+R>c[1]&&z-R<c[3])return true;return false;}
+
+/* ---------- player / modes ---------- */
+const pos=new V3(2.2,1.7,14);let yaw=.22,pitch=-.04;let mode='walk',prevMode='walk';
+const keys={};let joy={x:0,y:0};
+function tryMove(dx,dz){const nx=pos.x+dx,nz=pos.z+dz;if(!hit(nx,pos.z))pos.x=nx;if(!hit(pos.x,nz))pos.z=nz;
+ pos.x=Math.min(X1-.6,Math.max(X0+.6,pos.x));pos.z=Math.min(Z1-.6,Math.max(Z0+.6,pos.z));}
+function updateWalk(dt){
+ let f=0,s=0;if(keys.KeyW||keys.ArrowUp)f+=1;if(keys.KeyS||keys.ArrowDown)f-=1;if(keys.KeyD)s+=1;if(keys.KeyA)s-=1;
+ if(keys.ArrowLeft)yaw+=1.8*dt;if(keys.ArrowRight)yaw-=1.8*dt;
+ f+=-joy.y;s+=joy.x;const L=Math.hypot(f,s);if(L>1){f/=L;s/=L;}
+ const sp=(keys.ShiftLeft||keys.ShiftRight)?7:3.4;
+ if(L>.01)tryMove((-Math.sin(yaw)*f+Math.cos(yaw)*s)*sp*dt,(-Math.cos(yaw)*f-Math.sin(yaw)*s)*sp*dt);
+ camera.position.copy(pos);camera.rotation.set(pitch,yaw,0);
+}
+const bird={t:new V3(-1,0,8),r:78,th:.65,ph:.95};
+function updateOrbit(cam,o){cam.position.set(o.t.x+o.r*Math.sin(o.ph)*Math.sin(o.th),o.t.y+o.r*Math.cos(o.ph),o.t.z+o.r*Math.sin(o.ph)*Math.cos(o.th));cam.lookAt(o.t);}
+
+/* ---------- inspect scene ---------- */
+const iScene=new THREE.Scene();iScene.background=new THREE.Color(0xe6eaee);
+iScene.add(new THREE.HemisphereLight(0xffffff,0x8a8f94,.85));
+const iSun=new THREE.DirectionalLight(0xffffff,.8);iSun.castShadow=shadowsOn;iSun.shadow.mapSize.set(2048,2048);iSun.shadow.bias=-.0005;iSun.shadow.normalBias=.02;iScene.add(iSun,iSun.target);
+const iGround=new THREE.Mesh(new THREE.CircleGeometry(1,64),std(0xd5dadf,1,0));iGround.rotation.x=-Math.PI/2;iGround.receiveShadow=true;iScene.add(iGround);
+let iGrid=null;
+const iCam=new THREE.PerspectiveCamera(40,innerWidth/innerHeight,.05,800);
+const orb={t:new V3(),r:10,th:.7,ph:1.15,min:2,max:200};
+let iObj=null,iEl=null,iAnims=[],iParts={};
+const iHelp=new THREE.Box3Helper(new THREE.Box3(),0xe0961a);iHelp.visible=false;iScene.add(iHelp);
+
+function viewOffset(){
+ const w=innerWidth,h=innerHeight;
+ if(mode==='inspect'){if(w>760)iCam.setViewOffset(w,h,200,0,w,h);else iCam.setViewOffset(w,h,0,h*.27,w,h);}else iCam.clearViewOffset();
+}
+function openInspect(el){
+ if(mode!=='inspect')prevMode=mode;mode='inspect';iEl=el;
+ if(iObj)iScene.remove(iObj);
+ iObj=el.group.clone(true);iObj.position.set(0,0,0);iObj.rotation.set(0,el.type==='tr'?Math.PI:0,0);iScene.add(iObj);iObj.updateMatrixWorld(true);
+ const box=new THREE.Box3().setFromObject(iObj),c=box.getCenter(new V3()),sz=box.getSize(new V3());
+ iObj.position.x-=c.x;iObj.position.z-=c.z;iObj.position.y-=box.min.y;iObj.updateMatrixWorld(true);
+ const md=Math.max(sz.x,sz.y,sz.z);
+ orb.t.set(0,sz.y*.48,0);orb.r=md*1.25+1.5;orb.min=md*.3+.6;orb.max=md*4+10;orb.th=.75;orb.ph=1.2;
+ iGround.scale.setScalar(Math.max(6,md*.85));
+ if(iGrid)iScene.remove(iGrid);iGrid=new THREE.GridHelper(Math.max(12,md*1.7),Math.round(Math.max(12,md*1.7)),0xbfc6cc,0xccd2d7);iGrid.position.y=.003;iScene.add(iGrid);
+ const S=md*.9+2;Object.assign(iSun.shadow.camera,{left:-S,right:S,top:S,bottom:-S,near:.5,far:S*6});iSun.shadow.camera.updateProjectionMatrix();
+ iSun.position.set(-S*1.2,S*2,S*1.4);iSun.target.position.set(0,0,0);
+ iAnims=[];iObj.traverse(o=>{if(o.userData.anim)iAnims.push(o);});
+ iParts={};iObj.traverse(o=>{if(o.isMesh&&o.userData.part)(iParts[o.userData.part]=iParts[o.userData.part]||[]).push(o);});
+ iHelp.visible=false;
+ fillPanel(el);
+ $('insp').classList.add('open');$('list').classList.remove('open');$('bList').classList.remove('on');
+ $('hint').style.display='none';$('joy').style.display='none';$('bar').style.display='none';hideTip();hoverHelper.visible=false;
+ viewOffset();
+}
+function closeInspect(){mode=prevMode;$('insp').classList.remove('open');$('bar').style.display='';if(!isTouch&&innerWidth>760)$('hint').style.display='';if(isTouch&&mode==='walk')$('joy').style.display='block';viewOffset();hideTip();}
+function fillPanel(el){
+ const I=INFO[el.type];
+ $('iBay').textContent=el.bay;$('iTitle').textContent=el.name;$('iEn').textContent=I.en;
+ $('iDesc').innerHTML=I.p.map(t=>'<p>'+t+'</p>').join('')+(I.note?'<div class="note">'+I.note+'</div>':'');
+ $('iData').innerHTML=I.d.length?'<h4>Типични податоци</h4><table>'+I.d.map(r=>'<tr><td>'+r[0]+'</td><td>'+r[1]+'</td></tr>').join('')+'</table>':'';
+ const pp=$('iParts');pp.innerHTML='';
+ Object.keys(iParts).forEach(n=>{const b=document.createElement('button');b.textContent=n;b.onclick=()=>{highlightPart(n);[...pp.children].forEach(x=>x.classList.toggle('on',x===b));};pp.appendChild(b);});
+ $('iMsg').style.display='none';renderOps();
+}
+function highlightPart(n){const b=new THREE.Box3();iParts[n].forEach(m=>b.expandByObject(m));iHelp.box.copy(b);iHelp.visible=true;}
+function renderOps(){
+ const el=iEl,o=$('iOps');o.innerHTML='';if(!el)return;
+ const row=(label,stHtml,btn,fn)=>{const d=document.createElement('div');d.className='op';d.innerHTML='<div class="st">'+label+'<b>'+stHtml+'</b></div>';const b=document.createElement('button');b.textContent=btn;b.onclick=fn;d.appendChild(b);o.appendChild(d);};
+ if(el.type==='cb')row('Прекинувач',el.state.closed?'<span class="r">ВКЛУЧЕН (I)</span>':'<span class="g">ИСКЛУЧЕН (O)</span>',el.state.closed?'Исклучи':'Вклучи',()=>opCB(el));
+ if(el.type==='ds'||el.type==='dse')row('Раставувач',el.state.open?'<span class="g">ОТВОРЕН</span>':'<span class="r">ЗАТВОРЕН</span>',el.state.open?'Затвори':'Отвори',()=>opMain(el));
+ if(el.type==='dse')row('Заземјувач',el.state.earth?'<span class="r">ВКЛУЧЕН</span>':'<span class="g">ИСКЛУЧЕН</span>',el.state.earth?'Исклучи':'Вклучи',()=>opEarth(el));
+ if(el.type==='ds'||el.type==='dse'){const cb=BAYS[el.bay]&&BAYS[el.bay].cb;if(cb){const d=document.createElement('div');d.className='mut';d.style.fontSize='12px';d.innerHTML='Прекинувач во полето: '+(cb.state.closed?'<span style="color:#ff7b6b">вклучен</span>':'<span style="color:#5fd39a">исклучен</span>')+' — ';const a=document.createElement('a');a.href='#';a.textContent='отвори го';a.style.color='var(--acc)';a.onclick=e=>{e.preventDefault();openInspect(cb);};d.appendChild(a);o.appendChild(d);}}
+ if(el.type==='cb'){const ds=BAYS[el.bay].els.filter(e=>e.type==='ds'||e.type==='dse');const d=document.createElement('div');d.className='mut';d.style.fontSize='12px';d.textContent='Раставувачи во полето: ';
+  ds.forEach((x,i)=>{const a=document.createElement('a');a.href='#';a.textContent=(x.type==='dse'?'линиски':'собирнички')+' ('+(x.state.open?'отворен':'затворен')+')';a.style.color='var(--acc)';a.onclick=e=>{e.preventDefault();openInspect(x);};if(i)d.appendChild(document.createTextNode(' · '));d.appendChild(a);});o.appendChild(d);}
+}
+function msg(t){const m=$('iMsg');m.textContent=t;m.style.display='block';}
+const running=[];
+function animate(el,kind){
+ const tgt=a=>kind==='main'?(el.state.open?a.o:a.c):(el.state.earth?a.c:a.o);
+ el.anims.forEach((p,i)=>{const a=p.userData.anim;if(a.k!==kind)return;running.push({o:p,axis:a.axis,t:tgt(a)});
+  if(iEl===el&&iAnims[i])running.push({o:iAnims[i],axis:a.axis,t:tgt(a)});});
+}
+function opCB(el){el.state.closed=!el.state.closed;el.indMat.color.setHex(el.state.closed?0xc0392b:0x2e8b57);$('iMsg').style.display='none';renderOps();}
+function opMain(el){
+ const cb=BAYS[el.bay]&&BAYS[el.bay].cb;
+ if(cb&&cb.state.closed){msg('Блокада: прекинувачот во полето е вклучен. Раставувачот не смее да се манипулира под оптоварување — прво исклучете го прекинувачот.');return;}
+ if(el.type==='dse'&&el.state.earth){msg('Блокада: заземјувачот е вклучен. Прво исклучете го заземјувачот, па затворете го раставувачот.');return;}
+ el.state.open=!el.state.open;animate(el,'main');$('iMsg').style.display='none';renderOps();
+}
+function opEarth(el){
+ if(!el.state.open){msg('Блокада: заземјувачот може да се вклучи само кога линискиот раставувач е отворен.');return;}
+ el.state.earth=!el.state.earth;animate(el,'earth');$('iMsg').style.display='none';renderOps();
+}
+function stepAnims(dt){for(let i=running.length-1;i>=0;i--){const r=running[i];const c=r.o.rotation[r.axis];const d=r.t-c;if(Math.abs(d)<.002){r.o.rotation[r.axis]=r.t;running.splice(i,1);}else r.o.rotation[r.axis]=c+Math.sign(d)*Math.min(Math.abs(d),dt*1.6);}}
+
+/* ---------- picking, hover, tooltip ---------- */
+const ray=new THREE.Raycaster();const ndc=new V2();
+const pickRoots=ELS.map(e=>e.group).concat([BLD]);
+const hoverHelper=new THREE.Box3Helper(new THREE.Box3(),0xf2b632);hoverHelper.visible=false;scene.add(hoverHelper);
+function pickAt(cx,cy,cam,roots){ndc.set(cx/innerWidth*2-1,-(cy/innerHeight)*2+1);ray.setFromCamera(ndc,cam);ray.far=mode==='walk'?70:600;const h=ray.intersectObjects(roots,true);return h.length?h[0].object:null;}
+function elAt(cx,cy){const o=pickAt(cx,cy,camera,pickRoots);return o&&o.userData.el!==undefined?ELS[o.userData.el]:null;}
+const tip=$('tip');
+function showTip(x,y,html){tip.innerHTML=html;tip.style.display='block';const w=tip.offsetWidth;tip.style.left=Math.min(innerWidth-w-8,x+14)+'px';tip.style.top=(y+16)+'px';}
+function hideTip(){tip.style.display='none';}
+let hovEl=null,lastHov=0;
+function hover(x,y){
+ const now=performance.now();if(now-lastHov<60)return;lastHov=now;
+ if(mode==='inspect'){const o=pickAt(x,y,iCam,[iObj]);if(o&&o.userData.part){showTip(x,y,'<b>'+o.userData.part+'</b>');canvas.style.cursor='help';}else{hideTip();canvas.style.cursor='';}return;}
+ const el=elAt(x,y);
+ if(el!==hovEl){hovEl=el;if(el){hoverHelper.box.setFromObject(el.group);hoverHelper.visible=true;}else hoverHelper.visible=false;}
+ if(el){showTip(x,y,'<b>'+el.name+'</b><span class="mut">'+el.bay+' · клик за детали</span>');canvas.style.cursor='pointer';}else{hideTip();canvas.style.cursor='';}
+}
+function click(x,y){
+ if(mode==='inspect'){const o=pickAt(x,y,iCam,[iObj]);if(o&&o.userData.part){highlightPart(o.userData.part);[...$('iParts').children].forEach(b=>b.classList.toggle('on',b.textContent===o.userData.part));if(isTouch){showTip(x,y,'<b>'+o.userData.part+'</b>');setTimeout(hideTip,1600);}}return;}
+ const el=elAt(x,y);if(el)openInspect(el);
+}
+
+/* ---------- input ---------- */
+const ptrs=new Map();let down=null,pinch=0;
+canvas.addEventListener('pointerdown',e=>{canvas.focus();try{canvas.setPointerCapture(e.pointerId);}catch(_){}
+ ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
+ if(ptrs.size===1)down={x:e.clientX,y:e.clientY,t:performance.now(),m:0};else{down=null;const p=[...ptrs.values()];pinch=Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y);}});
+canvas.addEventListener('pointermove',e=>{
+ const p=ptrs.get(e.pointerId);
+ if(!p){if(e.pointerType==='mouse')hover(e.clientX,e.clientY);return;}
+ const dx=e.clientX-p.x,dy=e.clientY-p.y;p.x=e.clientX;p.y=e.clientY;
+ if(ptrs.size===2){const q=[...ptrs.values()];const d=Math.hypot(q[0].x-q[1].x,q[0].y-q[1].y);if(pinch>0)zoom(pinch/d);pinch=d;return;}
+ if(down)down.m+=Math.abs(dx)+Math.abs(dy);
+ if(down&&down.m<4)return;
+ hideTip();
+ const k=isTouch?.006:.0042;
+ if(mode==='walk'){yaw-=dx*k;pitch=Math.max(-1.35,Math.min(1.35,pitch-dy*k));}
+ else{const o=mode==='bird'?bird:orb;o.th-=dx*.006;o.ph=Math.max(.12,Math.min(mode==='bird'?1.45:1.62,o.ph-dy*.006));}
+});
+function endPtr(e){const had=ptrs.delete(e.pointerId);if(had&&down&&down.m<8&&performance.now()-down.t<600)click(e.clientX,e.clientY);if(ptrs.size===0)down=null;pinch=0;}
+canvas.addEventListener('pointerup',endPtr);canvas.addEventListener('pointercancel',e=>{ptrs.delete(e.pointerId);down=null;});
+canvas.addEventListener('pointerleave',()=>{if(!ptrs.size){hideTip();}});
+function zoom(f){if(mode==='walk')return;const o=mode==='bird'?bird:orb;o.r=Math.max(mode==='bird'?15:o.min,Math.min(mode==='bird'?160:o.max,o.r*f));}
+canvas.addEventListener('wheel',e=>{e.preventDefault();if(mode==='walk'){tryMove(-Math.sin(yaw)*-e.deltaY*.01,-Math.cos(yaw)*-e.deltaY*.01);}else zoom(Math.exp(e.deltaY*.0012));},{passive:false});
+addEventListener('keydown',e=>{keys[e.code]=true;if(e.code==='Escape'){if(mode==='inspect')closeInspect();$('list').classList.remove('open');$('bList').classList.remove('on');}
+ if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code))e.preventDefault();});
+addEventListener('keyup',e=>{keys[e.code]=false;});
+addEventListener('blur',()=>{for(const k in keys)keys[k]=false;});
+// joystick
+(function(){const J=$('joy'),K=$('knob');let id=null;
+ const set=(e)=>{const r=J.getBoundingClientRect();let x=(e.clientX-r.left-r.width/2)/(r.width/2),y=(e.clientY-r.top-r.height/2)/(r.height/2);const l=Math.hypot(x,y);if(l>1){x/=l;y/=l;}joy.x=x;joy.y=y;K.style.left=(40+x*40)+'px';K.style.top=(40+y*40)+'px';};
+ J.addEventListener('pointerdown',e=>{id=e.pointerId;J.setPointerCapture(id);set(e);e.preventDefault();});
+ J.addEventListener('pointermove',e=>{if(e.pointerId===id)set(e);});
+ const end=e=>{if(e.pointerId!==id)return;id=null;joy.x=joy.y=0;K.style.left='40px';K.style.top='40px';};
+ J.addEventListener('pointerup',end);J.addEventListener('pointercancel',end);})();
+
+/* ---------- UI: list, buttons ---------- */
+function teleport(el){
+ let px,pz,look;
+ if(el.view){[px,pz]=el.view.pos;look=new V3(...el.view.look);}
+ else{const b=new THREE.Box3().setFromObject(el.group),c=b.getCenter(new V3());px=c.x+6.3;pz=c.z;look=new V3(c.x,b.max.y*.45,c.z);}
+ pos.set(px,1.7,pz);
+ if(hit(pos.x,pos.z)){for(let r=.5;r<4;r+=.5){let ok=false;for(let a=0;a<6.28;a+=.785){if(!hit(px+Math.cos(a)*r,pz+Math.sin(a)*r)){pos.x=px+Math.cos(a)*r;pos.z=pz+Math.sin(a)*r;ok=true;break;}}if(ok)break;}}
+ const d=look.clone().sub(pos);yaw=Math.atan2(-d.x,-d.z);pitch=Math.atan2(d.y,Math.hypot(d.x,d.z));
+ if(mode==='inspect')closeInspect();if(mode==='bird')setBird(false);
+ hoverHelper.box.setFromObject(el.group);hoverHelper.visible=true;hovEl=null;setTimeout(()=>{if(!hovEl)hoverHelper.visible=false;},2200);
+ if(innerWidth<=760){$('list').classList.remove('open');$('bList').classList.remove('on');}
+}
+(function buildList(){const L=$('list');
+ ORDER.forEach(b=>{const h=document.createElement('h3');h.textContent=b;L.appendChild(h);
+  BAYS[b].els.forEach(el=>{const d=document.createElement('div');d.className='item';const s=document.createElement('span');s.textContent=el.name;s.title='Оди до елементот';s.onclick=()=>teleport(el);
+   const bt=document.createElement('button');bt.textContent='Детали';bt.onclick=()=>openInspect(el);d.appendChild(s);d.appendChild(bt);L.appendChild(d);});});})();
+$('bList').onclick=()=>{const o=$('list').classList.toggle('open');$('bList').classList.toggle('on',o);};
+function setBird(on){
+ if(mode==='inspect')closeInspect();
+ mode=on?'bird':'walk';$('bBird').classList.toggle('on',on);$('bBird').textContent=on?'Прошетка':'Поглед одозгора';
+ $('joy').style.display=(isTouch&&!on)?'block':'none';hoverHelper.visible=false;hideTip();
+}
+$('bBird').onclick=()=>setBird(mode!=='bird');
+function setShadows(on){shadowsOn=on;sun.castShadow=on;iSun.castShadow=on;$('bShadow').classList.toggle('on',on);}
+$('bShadow').onclick=()=>setShadows(!shadowsOn);setShadows(shadowsOn);
+$('iClose').onclick=closeInspect;
+$('bHelp').onclick=()=>{$('start').style.display='flex';};
+$('go').onclick=()=>{$('start').style.display='none';canvas.focus();};
+$('ctl').innerHTML=isTouch
+ ?'<li><b>Џојстик</b> (долу лево) — движење</li><li><b>Влечи</b> со прст — поглед</li><li><b>Допри</b> опрема — детален приказ</li><li><b>Елементи</b> — список и брз скок до секој елемент</li>'
+ :'<li><b>W A S D</b> / стрелки — движење, <b>Shift</b> — трчање</li><li><b>Влечи</b> со глушецот — поглед наоколу</li><li><b>Клик</b> на опрема — детален приказ, опис и податоци</li><li><b>Елементи</b> — список и брз скок до секој елемент · <b>Поглед одозгора</b> — преглед на постројката</li>';
+if(isTouch){$('hint').style.display='none';$('joy').style.display='block';}
+
+/* ---------- resize & loop ---------- */
+function resize(){renderer.setSize(innerWidth,innerHeight,false);camera.aspect=iCam.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();viewOffset();iCam.updateProjectionMatrix();}
+addEventListener('resize',resize);
+let last=performance.now();
+renderer.setAnimationLoop(()=>{const now=performance.now(),dt=Math.min(.05,(now-last)/1000);last=now;
+ stepAnims(dt);
+ if(mode==='walk'){updateWalk(dt);renderer.render(scene,camera);}
+ else if(mode==='bird'){updateOrbit(camera,bird);renderer.render(scene,camera);}
+ else{updateOrbit(iCam,orb);renderer.render(iScene,iCam);}
+});
+$('load').style.display='none';
+window.__sub={ELS,openInspect,closeInspect,setBird,teleport,pos,get mode(){return mode;}};
+})();
+</script>
+</body>
+</html>
