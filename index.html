@@ -74,7 +74,7 @@ td:first-child{color:var(--mut);width:48%}
 <body>
 <canvas id="c" tabindex="0"></canvas>
 <div id="load">Се вчитува…</div>
-<div id="title" class="card"><h1>ТС 110/20 kV — виртуелна прошетка</h1><p>Разводни постројки · ТФБ</p></div>
+<div id="title" class="card"><h1>ТС 110/20 kV — виртуелна прошетка</h1><p>Разводни постројки · ФТН Битола</p></div>
 <div id="bar">
   <button id="bList">Елементи</button>
   <button id="bBird">Поглед одозгора</button>
@@ -106,7 +106,7 @@ td:first-child{color:var(--mut);width:48%}
 <div id="start">
   <div class="card box">
     <h1>Виртуелна трансформаторска станица 110/20 kV</h1>
-    <p>Прошетај низ отворената 110 kV разводна постројка, влези во командната зграда и кликни на кој било елемент за детален приказ, опис и типични технички податоци. Раставувачите и прекинувачите може да се манипулираат — со вистински блокади.</p>
+    <p>Прошетај низ отворената 110 kV разводна постројка со двоен систем собирници, влези во командната зграда и кликни на кој било елемент за детален приказ, опис и типични технички податоци. Прекинувачите, раставувачите и заземјувачите може да се манипулираат — со вистински блокади, вклучително и префрлање на полињата од СС1 на СС2.</p>
     <ul id="ctl"></ul>
     <p class="mut small">Прототип за настава. Опремата е поедноставена; распоредот и податоците се типични и не се однесуваат на конкретна постројка.</p>
     <button id="go" class="on">Започни</button>
@@ -128,7 +128,7 @@ const renderer=new THREE.WebGLRenderer({canvas,antialias:true,powerPreference:'h
 renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,isTouch?1.5:2));
 renderer.setSize(innerWidth,innerHeight,false);
 renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
-let shadowsOn=!isTouch;
+let shadowsOn=!isTouch;let dirty=true;
 
 function skyTex(){const c=document.createElement('canvas');c.width=4;c.height=256;const g=c.getContext('2d');const gr=g.createLinearGradient(0,0,0,256);gr.addColorStop(0,'#6f9cc8');gr.addColorStop(.55,'#b9d0e4');gr.addColorStop(1,'#d6e0e6');g.fillStyle=gr;g.fillRect(0,0,4,256);return new THREE.CanvasTexture(c);}
 const scene=new THREE.Scene();
@@ -140,7 +140,7 @@ scene.add(new THREE.HemisphereLight(0xe2ecf6,0x6b6458,0.78));
 const sun=new THREE.DirectionalLight(0xfff2dc,0.95);
 sun.position.set(-40,70,40);sun.target.position.set(0,0,8);scene.add(sun,sun.target);
 sun.castShadow=shadowsOn;sun.shadow.mapSize.set(2048,2048);
-Object.assign(sun.shadow.camera,{left:-58,right:58,top:58,bottom:-58,near:10,far:220});
+Object.assign(sun.shadow.camera,{left:-64,right:64,top:64,bottom:-64,near:10,far:230});
 sun.shadow.bias=-0.0005;sun.shadow.normalBias=0.03;
 
 /* ---------- materials & geometry helpers ---------- */
@@ -169,18 +169,54 @@ function insGeo(h,rc,rs,pitch=.075,alt=true){
    p.push(new V2(rc,y),new V2(R,y+pitch*.22),new V2(R*.97,y+pitch*.38),new V2(rc,y+pitch*.78));}
   p.push(new V2(rc,h),new V2(0,h));return new THREE.LatheGeometry(p,18);});
 }
+function merge(parts){let n=0;const gs=parts.map(([g,m])=>{const ng=g.index?g.toNonIndexed():g.clone();ng.applyMatrix4(m);n+=ng.attributes.position.count;return ng;});
+ const pos=new Float32Array(n*3),nor=new Float32Array(n*3);let o=0;
+ gs.forEach(g=>{pos.set(g.attributes.position.array,o*3);nor.set(g.attributes.normal.array,o*3);o+=g.attributes.position.count;g.dispose();});
+ const out=new THREE.BufferGeometry();out.setAttribute('position',new THREE.BufferAttribute(pos,3));out.setAttribute('normal',new THREE.BufferAttribute(nor,3));
+ out.computeBoundingBox();out.computeBoundingSphere();return out;}
+const M4=(x,y,z,rx=0,ry=0,rz=0,sx=1,sy=1,sz=1)=>new THREE.Matrix4().compose(new V3(x,y,z),new THREE.Quaternion().setFromEuler(new THREE.Euler(rx,ry,rz)),new V3(sx,sy,sz));
+function member(a,b,t){const d=new V3().subVectors(b,a);const L=d.length();const q=new THREE.Quaternion().setFromUnitVectors(new V3(0,1,0),d.clone().normalize());
+ return [new THREE.BoxGeometry(t,L,t),new THREE.Matrix4().compose(a.clone().add(b).multiplyScalar(.5),q,new V3(1,1,1))];}
+// lattice (truss) column along +y, square section tapering wb -> wt
+function latticeCol(h,wb,wt,panel,legT=.09,brT=.045){
+ const P=[];const n=Math.max(1,Math.round(h/panel));
+ const C=(i,y)=>{const w=(wb+(wt-wb)*y/h)/2;return new V3([1,-1,-1,1][i]*w,y,[1,1,-1,-1][i]*w);};
+ for(let i=0;i<4;i++)P.push(member(C(i,0),C(i,h),legT));
+ for(let j=0;j<n;j++){const y0=j*h/n,y1=(j+1)*h/n;
+  for(let i=0;i<4;i++){const k=(i+1)%4;P.push(member(C(i,y0),C(k,y1),brT));P.push(member(C(k,y0),C(i,y1),brT));P.push(member(C(i,y1),C(k,y1),brT));}}
+ return merge(P);
+}
 function insulator(h,rc,rs,mat,part){
  const g=new THREE.Group();part=part||'Изолатор';
  g.add(at(mesh(insGeo(h-.16,rc,rs),mat,part),0,.08,0));
- const fl=cylG(+(rc*1.7).toFixed(3),+(rc*1.7).toFixed(3),.08,16);const fp='Метална арматура (прирабница)';
- g.add(at(mesh(fl,M.alu,fp),0,.04,0));g.add(at(mesh(fl,M.alu,fp),0,h-.04,0));return g;
+ const fr=+(rc*1.7).toFixed(3);
+ g.add(mesh(cache('fl'+h+'_'+fr,()=>merge([
+  [new THREE.CylinderGeometry(fr,fr,.08,16),M4(0,.04,0)],[new THREE.CylinderGeometry(fr,fr,.08,16),M4(0,h-.04,0)],
+  [new THREE.CylinderGeometry(fr*1.15,fr*1.15,.018,16),M4(0,.009,0)],[new THREE.CylinderGeometry(fr*1.15,fr*1.15,.018,16),M4(0,h-.009,0)]])),M.alu,'Метална арматура (прирабница)'));
+ return g;
 }
+// tubular galvanised support with base plate, gussets, anchor bolts and top flange (one merged mesh)
+function colGeo(h,w){return cache('col'+h+'_'+w,()=>{const r=+(w*.42).toFixed(3);const P=[];
+ P.push([new THREE.CylinderGeometry(r,r*1.08,h-.3,16),M4(0,.3+(h-.3)/2,0)]);
+ P.push([new THREE.BoxGeometry(w+.22,.03,w+.22),M4(0,.315,0)]);
+ P.push([new THREE.CylinderGeometry(r+.07,r+.07,.035,16),M4(0,h-.018,0)]);
+ for(let i=0;i<4;i++){const a=i*Math.PI/2;P.push([new THREE.BoxGeometry(.11,.2,.014),M4(Math.cos(a)*(r+.055),.43,Math.sin(a)*(r+.055),0,-a,0)]);
+  const bx=[1,-1,-1,1][i]*(w/2+.04),bz=[1,1,-1,-1][i]*(w/2+.04);P.push([new THREE.CylinderGeometry(.018,.018,.09,6),M4(bx,.36,bz)]);}
+ return merge(P);});}
 function column(h,w=.32){
- const g=new THREE.Group();const P='Челична носива конструкција';
- g.add(at(mesh(boxG(w,h,w),M.steel,P),0,h/2,0));
- g.add(at(mesh(boxG(w+.12,.04,w+.12),M.steel,P),0,h,0));
- g.add(at(mesh(boxG(w+.5,.3,w+.5),M.conc,'Бетонски темел'),0,.15,0));return g;
+ const g=new THREE.Group();
+ g.add(mesh(colGeo(h,w),M.steel,'Челична носива конструкција'));
+ g.add(at(mesh(boxG(w+.55,.3,w+.55),M.conc,'Бетонски темел'),0,.15,0));return g;
 }
+// door seams, handle, louvres on the ±z faces of a cabinet (centred at origin)
+function cabDetGeo(w,h,d){return cache('cd'+w+'_'+h+'_'+d,()=>{const P=[];
+ [1,-1].forEach(s=>{const z=s*(d/2+.004),ry=s>0?0:Math.PI,iw=w-.08,ih=h-.08;
+  P.push([new THREE.BoxGeometry(iw,.012,.008),M4(0,ih/2,z,0,ry)],[new THREE.BoxGeometry(iw,.012,.008),M4(0,-ih/2,z,0,ry)]);
+  P.push([new THREE.BoxGeometry(.012,ih,.008),M4(-iw/2,0,z,0,ry)],[new THREE.BoxGeometry(.012,ih,.008),M4(iw/2,0,z,0,ry)]);
+  P.push([new THREE.BoxGeometry(.025,Math.min(.14,h*.2),.03),M4(s*(iw/2-.06),0,z+s*.012,0,ry)]);
+  for(let i=0;i<3;i++)P.push([new THREE.BoxGeometry(iw*.5,.018,.012),M4(0,-ih/2+.06+i*.045,z,0,ry)]);
+ });return merge(P);});}
+function cabinet(w,h,d,part,mat){const g=new THREE.Group();g.add(mesh(boxG(w,h,d),mat||M.cab,part));g.add(mesh(cabDetGeo(w,h,d),M.dark,part));g.add(at(mesh(boxG(w+.06,.035,d+.06),mat||M.cab,part),0,h/2+.017,0));return g;}
 function tube(points,r,mat,part,seg){
  const c=new THREE.CatmullRomCurve3(points);const m=new THREE.Mesh(new THREE.TubeGeometry(c,seg||Math.max(10,points.length*10),r,6,false),mat);
  m.castShadow=true;m.userData.noCollide=true;if(part)m.userData.part=part;return m;
@@ -198,22 +234,32 @@ function dangerTex(){const w=256,h=230,c=document.createElement('canvas');c.widt
  g.font='700 24px Inter, Arial';g.textAlign='center';g.fillText('ОПАСНОСТ ПО ЖИВОТ',128,203);return new THREE.CanvasTexture(c);}
 
 /* ---------- layout constants ---------- */
-const PH=[-2.2,0,2.2];          // phase offsets (local x) L1,L2,L3
-const BZ=[-2.2,0,2.2];          // busbar phases z L1,L2,L3
+const PH=[-2.2,0,2.2];            // phase offsets (local x) L1,L2,L3
+const S1=[-6.2,-4.0,-1.8];        // busbar system СС1, phase z L1..L3
+const S2=[1.8,4.0,6.2];           // busbar system СС2, phase z L1..L3
 const BUSY=8.55;
-const X0=-30,X1=28,Z0=-33,Z1=50; // fence
+const X0=-34,X1=32,Z0=-33,Z1=50;  // fence
 
 /* ---------- ground, roads, fence ---------- */
 const grassT=noiseTex('#5d7843',['#6b8a4c','#526b3b','#7a9655','#4b6236'],5000,1.8);grassT.repeat.set(270,270);
 const gravT=noiseTex('#8c8881',['#a8a49c','#6f6c67','#bab5ab','#7c7973','#999389'],7000,1.5);gravT.repeat.set((X1-X0)/3.5,(Z1-Z0)/3.5);
 function flat(w,d,mat,x,y,z){const m=new THREE.Mesh(new THREE.PlaneGeometry(w,d),mat);m.rotation.x=-Math.PI/2;m.position.set(x,y,z);m.receiveShadow=true;m.userData.ground=true;scene.add(m);return m;}
-flat(2400,2400,new THREE.MeshStandardMaterial({map:grassT,roughness:1}),0,-.06,0);
-flat(X1-X0,Z1-Z0,new THREE.MeshStandardMaterial({map:gravT,roughness:1}),(X0+X1)/2,.012,(Z0+Z1)/2);
+function holedPlane(outer,holes,mat,y){const sh=new THREE.Shape(outer.map(([x,z])=>new V2(x,-z)));holes.forEach(h=>sh.holes.push(new THREE.Path(h.map(([x,z])=>new V2(x,-z)))));
+ const m=new THREE.Mesh(new THREE.ShapeGeometry(sh),mat);m.rotation.x=-Math.PI/2;m.position.y=y;m.receiveShadow=true;m.userData.ground=true;scene.add(m);return m;}
+const rectP=(x0,z0,x1,z1)=>[[x0,z0],[x1,z0],[x1,z1],[x0,z1]];
+grassT.repeat.set(1/9,1/9);gravT.repeat.set(1/3.5,1/3.5);
+holedPlane(rectP(-1200,-1200,1200,1200),[rectP(X0,Z0,X1,Z1)],new THREE.MeshStandardMaterial({map:grassT,roughness:1}),-.06);
+// gravel with openings: the cable-trench cross-section and the floor cable channel of the control building
+holedPlane(rectP(X0,Z0,X1,Z1),[rectP(-4.6,28.15,-2.6,29.35),[[-1.45,35.3],[-.55,35.3],[-.55,42.9],[-6.1,42.9],[-6.1,42.3],[-1.45,42.3]]],new THREE.MeshStandardMaterial({map:gravT,roughness:1}),.012);
 const roadM=std(0xa3a09a,.95,0);
-flat(42,4,roadM,7,.03,31.5);flat(150,4.5,roadM,103,.025,31.5);flat(6,4,roadM,1.8,.031,34);
+flat(46,4,roadM,9,.03,31.5);flat(150,4.5,roadM,107,.025,31.5);flat(6,4,roadM,1.8,.031,34);
 const trM=std(0x8a867f,.95,0);
 function trench(x0,z0,x1,z1){const w=Math.abs(x1-x0)||.9,d=Math.abs(z1-z0)||.9;const m=mesh(new THREE.BoxGeometry(w,.08,d),trM);m.position.set((x0+x1)/2,.04,(z0+z1)/2);m.userData.noCollide=true;scene.add(m);}
-trench(-18,-8,14,-8);trench(-12,8,12,8);trench(1,-8,1,35);trench(-11,28.2,11,28.2);
+const trIn=std(0x2c2b29,1,0);
+function openTrench(x0,z0,x1,z1,y=0,parent=scene){const ax=Math.abs(x1-x0)>Math.abs(z1-z0),L=ax?Math.abs(x1-x0):Math.abs(z1-z0),cx=(x0+x1)/2,cz=(z0+z1)/2,W=.9;
+ const b=new THREE.Mesh(new THREE.PlaneGeometry(ax?L:W-.2,ax?W-.2:L),trIn);b.rotation.x=-Math.PI/2;b.position.set(cx,y+.02,cz);b.receiveShadow=true;b.userData.ground=true;parent.add(b);
+ [-1,1].forEach(s=>{const r=mesh(new THREE.BoxGeometry(ax?L:.12,.12,ax?.12:L),M.conc);r.position.set(ax?cx:cx+s*(W/2-.06),y+.06,ax?cz+s*(W/2-.06):cz);r.userData.noCollide=true;parent.add(r);});}
+trench(-30,-8.5,20,-8.5);trench(-12,8.5,28,8.5);trench(-1,-8.5,-1,27.0);
 (function fence(){
  const segs=[[X0,Z0,X1,Z0],[X1,Z0,X1,29.2],[X1,33.8,X1,Z1],[X1,Z1,X0,Z1],[X0,Z1,X0,Z0]];
  const c=document.createElement('canvas');c.width=c.height=64;const g=c.getContext('2d');g.strokeStyle='#c9cfd2';g.lineWidth=2.2;
@@ -232,84 +278,127 @@ trench(-18,-8,14,-8);trench(-12,8,12,8);trench(1,-8,1,35);trench(-11,28.2,11,28.
  const sg2=sg.clone();sg2.position.set(X1+.06,1.5,28.6);sg2.rotation.y=Math.PI/2;scene.add(sg2);
 })();
 
-/* ---------- equipment builders (local frame: +z points toward the busbar) ---------- */
-function buildDisconnector(withEarth){
- const g=new THREE.Group(),terms={a:[],b:[]};const H=2.4,IH=1.35,SP=1.25;
+/* ---------- equipment builders (local frame: +z points toward the busbars) ---------- */
+function buildPanto(poles){
+ // pantograph busbar disconnector; poles = [[x,z],...] in the element's local frame
+ const g=new THREE.Group(),terms={a:[]};
+ poles.forEach(([px,pz])=>{
+  const pg=new THREE.Group();pg.position.set(px,0,pz);
+  pg.add(column(2.6,.3));
+  pg.add(at(mesh(boxG(.7,.08,.55),M.steel,'Основна плоча'),0,2.64,0));
+  pg.add(at(insulator(1.6,.09,.16,M.porc,'Потпорен изолатор'),0,2.68,-.17));
+  pg.add(at(insulator(1.6,.07,.13,M.porc,'Погонски (ротационен) изолатор'),0,2.68,.19));
+  pg.add(at(mesh(boxG(.36,.22,.66),M.alu,'Глава со механизам на пантографот'),0,4.39,0));
+  [1,-1].forEach(s=>pg.add(at(mesh(boxG(.12,.04,.16),M.alu,'Приклучок за полскиот спроводник'),0,4.39,s*.4)));
+  const cb=cabinet(.45,.65,.3,'Моторен погон на раставувачот');cb.position.set(0,1.3,.32);pg.add(cb);
+  pg.add(at(mesh(cylG(.02,.02,1.0,8),M.steelDark,'Погонска осовина'),0,2.12,.32));
+  const ar=new THREE.Group();ar.name='panto';ar.position.set(0,4.5,0);
+  for(let i=0;i<8;i++){const l=mesh(cylG(.03,.03,1.05,8),M.alu,'Ножични раце (пантограф)');l.name='l'+i;ar.add(l);}
+  const top=mesh(boxG(.07,.05,.55),M.copper,'Контактни прсти');top.name='top';ar.add(top);
+  ar.userData.anim={k:'main',kind:'panto',o:1.36,c:.41,v:.41};setPanto(ar,.41);pg.add(ar);
+  pg.add(at(mesh(boxG(.04,.12,.04),M.alu,'Фиксен контакт обесен на собирницата'),0,BUSY-.11,0));
+  pg.add(at(mesh(boxG(.06,.04,.62),M.alu,'Фиксен контакт обесен на собирницата'),0,BUSY-.17,0));
+  g.add(pg);terms.a.push(new V3(px,4.45,pz));
+ });
+ return {group:g,terms};
+}
+function setPanto(ar,th){
+ const L=1.05,s=L*Math.sin(th),c=L*Math.cos(th);
+ const V=[[0,0],[-s,c],[s,c],[0,2*c],[-s,3*c],[s,3*c],[0,4*c]],E=[[0,1],[0,2],[1,3],[2,3],[3,4],[3,5],[4,6],[5,6]];
+ E.forEach(([a,b],i)=>{const o=ar.getObjectByName('l'+i);const dx=V[b][0]-V[a][0],dy=V[b][1]-V[a][1];
+  o.position.set((V[a][0]+V[b][0])/2,(V[a][1]+V[b][1])/2,0);o.rotation.set(0,0,Math.atan2(-dx,dy));});
+ ar.getObjectByName('top').position.set(0,4*c+.01,0);
+}
+function buildLineDisconnector(){
+ const g=new THREE.Group(),terms={a:[],b:[]};const H=2.4,IH=1.35,SP=1.25,PY=H+.15;
  PH.forEach(dx=>{
   g.add(at(column(H-.1,.28),dx,0,0));
   g.add(at(mesh(boxG(.22,.18,2*SP+.5),M.steel,'Основна рамка на полот'),dx,H,0));
   [1,-1].forEach(s=>{
-   const pv=new THREE.Group();pv.position.set(dx,H+.09,s*SP);
+   g.add(at(mesh(cylG(.13,.15,.07,16),M.alu,'Ротационо лежиште'),dx,H+.12,s*SP));
+   const pv=new THREE.Group();pv.position.set(dx,PY,s*SP);
    pv.add(insulator(IH,.075,.13,M.porc,'Ротационен потпорен изолатор'));
    pv.add(at(mesh(boxG(.07,.07,SP-.04),M.alu,'Контактен нож (струјна патека)'),0,IH+.06,-s*(SP-.04)/2));
    const tip=mesh(cylG(.05,.05,.16,10),M.copper,'Главни контакти');tip.rotation.x=Math.PI/2;tip.position.set(0,IH+.06,-s*(SP-.1));pv.add(tip);
+   [-1,1].forEach(q=>pv.add(at(mesh(boxG(.015,.06,.14),M.copper,'Главни контакти'),q*.05,IH+.06,-s*(SP-.12))));
    pv.add(at(mesh(boxG(.12,.03,.2),M.alu,'Приклучок'),0,IH+.1,s*.12));
    pv.userData.anim={k:'main',o:s>0?Math.PI/2:-Math.PI/2,c:0,axis:'y'};
-   g.add(pv);(s>0?terms.a:terms.b).push(new V3(dx,H+.09+IH+.12,s*(SP+.12)));
+   g.add(pv);(s>0?terms.a:terms.b).push(new V3(dx,PY+IH+.12,s*(SP+.12)));
   });
-  if(withEarth){
-   const ep=new THREE.Group();ep.position.set(dx+.32,H+.1,-SP);
-   ep.add(at(mesh(boxG(.05,1.42,.05),M.alu,'Нож на заземјувачот'),0,.71,0));
-   ep.add(at(mesh(boxG(.09,.06,.09),M.copper,'Контакт на заземјувачот'),0,1.42,0));
-   ep.userData.anim={k:'earth',o:Math.PI/2,c:0,axis:'x'};ep.rotation.x=Math.PI/2;g.add(ep);
-   g.add(at(mesh(boxG(.3,.05,.06),M.copper,'Фиксен контакт за заземјување'),dx+.17,H+.09+IH+.02,-SP));
-  }
+  const ep=new THREE.Group();ep.position.set(dx+.32,H+.12,-SP);
+  ep.add(at(mesh(boxG(.05,1.47,.05),M.alu,'Нож на заземјувачот'),0,.735,0));
+  ep.add(at(mesh(boxG(.09,.06,.09),M.copper,'Контакт на заземјувачот'),0,1.47,0));
+  ep.userData.anim={k:'earth',o:Math.PI/2,c:0,axis:'x'};ep.rotation.x=Math.PI/2;g.add(ep);
+  g.add(at(mesh(boxG(.3,.05,.06),M.copper,'Фиксен контакт за заземјување'),dx+.17,PY+IH+.02,-SP));
  });
- g.add(at(mesh(boxG(4.5,.06,.06),M.steelDark,'Механичка спрега меѓу половите'),0,H-.16,SP));
- g.add(at(mesh(boxG(.5,.75,.32),M.cab,'Моторен погон на раставувачот'),0,1.3,.32));
- if(withEarth){g.add(at(mesh(boxG(4.5,.06,.06),M.steelDark,'Погонска осовина на заземјувачот'),.32,H+.1,-SP));
-  g.add(at(mesh(boxG(.5,.75,.32),M.cab,'Погон на заземјувачот (со блокада)'),0,1.3,-.32));}
+ g.add(at(mesh(cylG(.025,.025,4.5,8),M.steelDark,'Механичка спрега меѓу половите'),0,H-.16,SP).rotateZ(Math.PI/2));
+ g.add(at(mesh(cylG(.03,.03,4.5,8),M.steelDark,'Погонска осовина на заземјувачот'),.32,H+.12,-SP).rotateZ(Math.PI/2));
+ const c1=cabinet(.5,.75,.32,'Моторен погон на раставувачот');c1.position.set(0,1.3,.32);g.add(c1);
+ const c2=cabinet(.5,.75,.32,'Погон на заземјувачот (со блокада)');c2.position.set(0,1.3,-.32);g.add(c2);
+ g.add(at(mesh(cylG(.02,.02,.55,8),M.steelDark,'Погонска шипка'),0,1.95,.45));
  return {group:g,terms};
 }
 function buildBreaker(){
  const g=new THREE.Group(),terms={a:[],b:[]};const H=2.4;
- [-2.9,2.9].forEach(x=>g.add(at(column(H-.15,.34),x,0,0)));
- g.add(at(mesh(boxG(6.2,.28,.45),M.steel,'Заедничка носива рамка'),0,H,0));
+ [-2.9,2.9].forEach(x=>{g.add(at(column(H-.15,.34),x,0,0));g.add(at(mesh(boxG(.05,.08,.04),M.copper,'Заземјувачки приклучок'),x+.2,.6,0));});
+ g.add(at(mesh(cache('cbfr',()=>merge([[new THREE.BoxGeometry(6.2,.03,.42),M4(0,.13,0)],[new THREE.BoxGeometry(6.2,.03,.42),M4(0,-.13,0)],[new THREE.BoxGeometry(6.2,.26,.03),M4(0,0,0)],[new THREE.BoxGeometry(.03,.26,.42),M4(-3.1,0,0)],[new THREE.BoxGeometry(.03,.26,.42),M4(3.1,0,0)]])),M.steel,'Заедничка носива рамка (I-профил)'),0,H,0));
+ g.add(at(mesh(cylG(.025,.025,4.6,8),M.steelDark,'Механичка спрега меѓу половите'),0,H-.2,.26).rotateZ(Math.PI/2));
  PH.forEach(dx=>{
-  g.add(at(insulator(1.55,.1,.17,M.sil,'Потпорен изолатор'),dx,H+.14,0));
+  g.add(at(insulator(1.55,.1,.17,M.sil,'Потпорен изолатор (со погонска шипка внатре)'),dx,H+.14,0));
   const y1=H+.14+1.55;
-  g.add(at(mesh(cylG(.2,.2,.32,16),M.alu,'Кукиште на механизмот на полот'),dx,y1+.16,0));
+  g.add(at(mesh(cylG(.2,.2,.32,18),M.alu,'Куќиште на механизмот на полот'),dx,y1+.16,0));
   g.add(at(mesh(boxG(.14,.04,.22),M.alu,'Приклучок (долен)'),dx,y1+.16,-.3));
-  g.add(at(mesh(cylG(.05,.05,.12,10),M.dark,'Монитор на густина на SF6'),dx+.23,y1+.16,0));
+  g.add(at(mesh(cylG(.055,.055,.09,14),M.dark,'Монитор на густина на SF6'),dx+.25,y1+.16,0).rotateZ(Math.PI/2));
+  g.add(at(mesh(cylG(.045,.045,.01,14),M.white,'Монитор на густина на SF6'),dx+.3,y1+.16,0).rotateZ(Math.PI/2));
+  g.add(at(mesh(boxG(.08,.08,.16),M.dark,'Вентил за полнење со SF6'),dx-.24,y1+.12,0));
   g.add(at(insulator(1.25,.15,.23,M.sil,'Гасилна комора (SF6)'),dx,y1+.32,0));
   const y2=y1+.32+1.25;
-  g.add(at(mesh(cylG(.18,.2,.3,16),M.alu,'Горна капа'),dx,y2+.15,0));
-  g.add(at(mesh(boxG(.14,.04,.22),M.alu,'Приклучок (горен)'),dx,y2+.12,.3));
+  g.add(at(mesh(cylG(.18,.2,.3,18),M.alu,'Горна капа (филтер и сигурносна мембрана)'),dx,y2+.15,0));
+  const dm=mesh(sphG(.18),M.alu,'Горна капа (филтер и сигурносна мембрана)');dm.position.set(dx,y2+.3,0);dm.scale.y=.35;g.add(dm);
+  g.add(at(mesh(boxG(.14,.04,.24),M.alu,'Приклучок (горен)'),dx,y2+.12,.3));
   terms.b.push(new V3(dx,y1+.18,-.42));terms.a.push(new V3(dx,y2+.14,.42));
  });
- g.add(at(mesh(boxG(.9,1.25,.55),M.cab,'Пружински погонски механизам'),0,H-.14-.625,0));
+ const cab=cabinet(.9,1.25,.55,'Пружински погонски механизам');cab.position.set(0,H-.14-.625,0);g.add(cab);
  const indMat=M.red.clone();
- g.add(at(mesh(boxG(.22,.14,.02),indMat,'Покажувач на положба (I / O)'),0,H-.5,.285));
- g.add(at(mesh(boxG(.22,.14,.02),indMat,'Покажувач на положба (I / O)'),0,H-.5,-.285));
+ [1,-1].forEach(s=>{g.add(at(mesh(boxG(.22,.14,.02),indMat,'Покажувач на положба (I / O)'),-.2,H-.55,s*.29));
+  g.add(at(mesh(boxG(.12,.05,.02),M.white,'Бројач на манипулации'),.15,H-.55,s*.29));});
  return {group:g,terms,indMat};
 }
 function buildCT(){
  const g=new THREE.Group(),terms={a:[],b:[]};const H=2.2;
+ const lug=cache('ctlug',()=>merge([0,1,2,3].map(i=>{const a=i*Math.PI/2+.78;return [new THREE.BoxGeometry(.03,.1,.07),M4(Math.cos(a)*.33,0,Math.sin(a)*.33,0,-a,0)];})));
  PH.forEach(dx=>{
   g.add(at(column(H,.3),dx,0,0));
-  g.add(at(mesh(cylG(.3,.32,.55,18),M.tank,'Подножје (казан)'),dx,H+.315,0));
-  g.add(at(mesh(boxG(.32,.3,.2),M.cab,'Секундарна разводна кутија'),dx,H+.3,.38));
+  g.add(at(mesh(cylG(.3,.32,.55,20),M.tank,'Подножје (казан)'),dx,H+.315,0));
+  g.add(at(mesh(lug,M.tank,'Уши за подигање'),dx,H+.52,0));
+  const sb=cabinet(.32,.32,.2,'Секундарна разводна кутија');sb.position.set(dx,H+.3,.41);g.add(sb);
+  g.add(at(mesh(boxG(.05,.05,.06),M.copper,'Заземјувачки приклучок'),dx-.33,H+.12,0));
   g.add(at(insulator(1.9,.13,.23,M.porc,'Порцеланска изолација (маслено-хартиена)'),dx,H+.59,0));
   const yh=H+.59+1.9;
-  g.add(at(mesh(cylG(.36,.3,.55,18),M.alu,'Глава со примарен спроводник и јадра'),dx,yh+.275,0));
-  const d=mesh(sphG(.36),M.alu,'Метален мев (компензатор на масло)');d.position.set(dx,yh+.55,0);d.scale.y=.45;g.add(d);
-  g.add(at(mesh(cylG(.05,.05,.04,12),M.dark,'Покажувач на ниво на масло'),dx+.3,yh+.45,.18));
-  [1,-1].forEach(s=>{g.add(at(mesh(boxG(.12,.16,.18),M.copper,s>0?'Примарен приклучок P1':'Примарен приклучок P2'),dx,yh+.3,s*.45));
-   (s>0?terms.a:terms.b).push(new V3(dx,yh+.3,s*.55));});
+  g.add(at(mesh(cylG(.2,.17,.16,18),M.alu,'Врат на главата'),dx,yh+.08,0));
+  const hd=mesh(cylG(.3,.3,.9,22),M.alu,'Глава со примарен спроводник и јадра');hd.rotation.x=Math.PI/2;hd.position.set(dx,yh+.42,0);g.add(hd);
+  [1,-1].forEach(s=>{const c=mesh(cylG(.32,.32,.05,22),M.alu,'Глава со примарен спроводник и јадра');c.rotation.x=Math.PI/2;c.position.set(dx,yh+.42,s*.46);g.add(c);
+   g.add(at(mesh(boxG(.1,.16,.12),M.copper,s>0?'Примарен приклучок P1':'Примарен приклучок P2'),dx,yh+.42,s*.55));
+   (s>0?terms.a:terms.b).push(new V3(dx,yh+.42,s*.63));});
+  const d=mesh(sphG(.24),M.alu,'Метален мев (компензатор на масло)');d.position.set(dx,yh+.7,0);d.scale.y=.55;g.add(d);
+  g.add(at(mesh(cylG(.06,.06,.02,14),M.white,'Покажувач на ниво на масло'),dx+.3,yh+.42,.2).rotateZ(Math.PI/2));
  });
  return {group:g,terms};
 }
 function buildCVT(){
  const g=new THREE.Group(),terms={a:[]};const H=2.0;
+ const rib=cache('cvtrib',()=>merge([-.2,-.07,.07,.2].flatMap(z=>[[new THREE.BoxGeometry(.06,.6,.02),M4(.34,0,z)],[new THREE.BoxGeometry(.06,.6,.02),M4(-.34,0,z)]])));
  PH.forEach(dx=>{
   g.add(at(column(H,.32),dx,0,0));
-  g.add(at(mesh(boxG(.6,.75,.6),M.tank,'Електромагнетна единица (подножје)'),dx,H+.415,0));
-  g.add(at(mesh(boxG(.3,.32,.18),M.cab,'Секундарна разводна кутија'),dx,H+.4,.39));
+  g.add(at(mesh(boxG(.62,.72,.62),M.tank,'Електромагнетна единица (во масло)'),dx,H+.4,0));
+  g.add(at(mesh(rib,M.tank,'Ребра за ладење'),dx,H+.4,0));
+  const sb=cabinet(.32,.34,.18,'Секундарна разводна кутија');sb.position.set(dx,H+.38,.41);g.add(sb);
+  g.add(at(mesh(boxG(.2,.2,.12),M.cab,'Кутија за ВФ приклучок'),dx,H+.45,-.37));
   const P='Кондензаторски столб (капацитивен делител)';
-  g.add(at(insulator(1.35,.14,.24,M.porc,P),dx,H+.79,0));g.add(at(insulator(1.35,.14,.24,M.porc,P),dx,H+.79+1.35,0));
-  const yt=H+.79+2.7;
-  g.add(at(mesh(cylG(.2,.24,.2,16),M.alu,'Горна капа'),dx,yt+.1,0));
-  g.add(at(mesh(cylG(.04,.04,.14,8),M.alu,'Приклучок'),dx,yt+.27,0));terms.a.push(new V3(dx,yt+.34,0));
+  g.add(at(insulator(1.35,.14,.24,M.porc,P),dx,H+.76,0));g.add(at(insulator(1.35,.14,.24,M.porc,P),dx,H+.76+1.35,0));
+  const yt=H+.76+2.7;
+  g.add(at(mesh(cylG(.2,.24,.2,18),M.alu,'Горна капа (експанзионен сад)'),dx,yt+.1,0));
+  g.add(at(mesh(cylG(.04,.04,.14,8),M.alu,'Примарен приклучок'),dx,yt+.27,0));terms.a.push(new V3(dx,yt+.34,0));
  });
  return {group:g,terms};
 }
@@ -317,12 +406,13 @@ function buildVT(){
  const g=new THREE.Group(),terms={a:[]};const H=2.2;
  PH.forEach(dx=>{
   g.add(at(column(H,.3),dx,0,0));
-  g.add(at(mesh(cylG(.34,.36,.75,18),M.tank,'Казан со јадро и намотки'),dx,H+.415,0));
-  g.add(at(mesh(boxG(.3,.3,.2),M.cab,'Секундарна разводна кутија'),dx,H+.35,.42));
+  g.add(at(mesh(cylG(.34,.36,.75,20),M.tank,'Казан со јадро и намотки'),dx,H+.415,0));
+  const sb=cabinet(.3,.3,.2,'Секундарна разводна кутија');sb.position.set(dx,H+.35,.44);g.add(sb);
   g.add(at(insulator(1.7,.12,.21,M.porc,'Порцеланска изолација'),dx,H+.79,0));
   const yt=H+.79+1.7;
-  g.add(at(mesh(cylG(.2,.22,.26,16),M.alu,'Глава (компензатор на масло)'),dx,yt+.13,0));
-  g.add(at(mesh(cylG(.04,.04,.14,8),M.alu,'Примарен приклучок'),dx,yt+.33,0));terms.a.push(new V3(dx,yt+.4,0));
+  g.add(at(mesh(cylG(.2,.22,.26,18),M.alu,'Глава (компензатор на масло)'),dx,yt+.13,0));
+  const d=mesh(sphG(.2),M.alu,'Глава (компензатор на масло)');d.position.set(dx,yt+.26,0);d.scale.y=.4;g.add(d);
+  g.add(at(mesh(cylG(.04,.04,.14,8),M.alu,'Примарен приклучок'),dx,yt+.38,0));terms.a.push(new V3(dx,yt+.45,0));
  });
  return {group:g,terms};
 }
@@ -339,7 +429,7 @@ function buildSA(){
   g.add(at(mesh(cylG(.035,.035,.16,8),M.alu,'Приклучок'),dx,yt+.2,0));terms.a.push(new V3(dx,yt+.28,0));
   g.add(at(mesh(boxG(.16,.2,.1),M.dark,'Бројач на прорадувања'),dx,1.45,.2));
   g.add(at(mesh(cylG(.07,.07,.02,12),M.white,'Бројач на прорадувања'),dx,1.47,.255).rotateX(Math.PI/2));
-  g.add(at(mesh(boxG(.03,H-.4,.03),M.copper,'Заземјувачки спроводник'),dx+.17,(H)/2+.25,.18));
+  g.add(at(mesh(boxG(.03,H-.4,.03),M.copper,'Заземјувачки спроводник'),dx+.17,H/2+.25,.18));
  });
  return {group:g,terms};
 }
@@ -350,20 +440,35 @@ function buildTransformer(){
  [[-2.4,-.9],[2.4,-.9],[-2.4,.9],[2.4,.9]].forEach(([x,z])=>{const w=mesh(cylG(.18,.18,.12,14),M.steelDark,'Тркала за транспорт');w.rotation.x=Math.PI/2;w.position.set(x,.56,z);g.add(w);});
  g.add(at(mesh(boxG(6.6,.2,2.6),M.steelDark,'Основна рамка'),0,.72,0));
  g.add(at(mesh(boxG(6.4,2.9,2.5),T,'Казан (активен дел потопен во масло)'),0,2.27,0));
- [-2.4,-.8,.8,2.4].forEach(x=>[1,-1].forEach(s=>g.add(at(mesh(boxG(.12,2.9,.1),T,'Засилувачи на казанот'),x,2.27,s*1.3))));
+ g.add(mesh(cache('trstiff',()=>merge([-2.4,-.8,.8,2.4].flatMap(x=>[[new THREE.BoxGeometry(.12,2.9,.1),M4(x,2.27,1.3)],[new THREE.BoxGeometry(.12,2.9,.1),M4(x,2.27,-1.3)]]))),T,'Засилувачи на казанот'));
  g.add(at(mesh(boxG(6.6,.12,2.7),T,'Капак на казанот'),0,3.78,0));
  const TOP=3.84;
+ g.add(mesh(cache('trlug',()=>merge([[-3.1,-1.2],[3.1,-1.2],[-3.1,1.2],[3.1,1.2]].map(([x,z])=>[new THREE.BoxGeometry(.14,.22,.05),M4(x,TOP+.1,z)]))),T,'Уши за подигање'));
+ g.add(mesh(cache('trearth',()=>merge([[-3,1.28],[3,1.28],[-3,-1.28],[3,-1.28]].map(([x,z])=>[new THREE.BoxGeometry(.14,.07,.04),M4(x,.95,z)]))),M.copper,'Заземјувачки приклучоци'));
+ const fanS=std(0x4b5257,.6,.2,{side:THREE.DoubleSide});
+ const blades=cache('fanb',()=>{const P=[[new THREE.CylinderGeometry(.08,.08,.12,12),M4(0,0,0,0,0,Math.PI/2)]];for(let i=0;i<4;i++){const a=i*Math.PI/2;P.push([new THREE.BoxGeometry(.02,.3,.12),M4(0,Math.cos(a)*.18,Math.sin(a)*.18,a,0,0)]);}return merge(P);});
+ const guard=cache('fang',()=>{const P=[[new THREE.TorusGeometry(.38,.012,6,32),M4(0,0,0,0,Math.PI/2,0)],[new THREE.TorusGeometry(.24,.01,6,28),M4(0,0,0,0,Math.PI/2,0)]];for(let i=0;i<4;i++)P.push([new THREE.BoxGeometry(.012,.76,.012),M4(0,0,0,i*Math.PI/4,0,0)]);return merge(P);});
  [1,-1].forEach(s=>{
   for(let i=0;i<9;i++)g.add(at(mesh(boxG(.95,2.3,.045),T,'Радијатори'),s*3.8,2.25,-1+i*.25));
   g.add(at(mesh(boxG(.6,.14,2.2),T,'Радијатори'),s*3.5,3.33,0));g.add(at(mesh(boxG(.6,.14,2.2),T,'Радијатори'),s*3.5,1.17,0));
-  [-.55,.55].forEach(z=>{const f=mesh(cylG(.36,.36,.22,18),M.fan,'Вентилатори (ладење ONAF)');f.rotation.z=Math.PI/2;f.position.set(s*4.45,2.25,z);g.add(f);});
+  g.add(mesh(cache('trpipe'+s,()=>merge([3.33,1.17].flatMap(y=>[-.7,.7].flatMap(z=>[[new THREE.CylinderGeometry(.06,.06,.3,10),M4(s*3.3,y,z,0,0,Math.PI/2)],[new THREE.CylinderGeometry(.1,.1,.03,12),M4(s*3.3,y,z,0,0,Math.PI/2)]])))),T,'Вентили и цевки на радијаторите'));
+  [-.55,.55].forEach(z=>{
+   const sh=mesh(new THREE.CylinderGeometry(.4,.4,.22,24,1,true),fanS,'Вентилатори (ладење ONAF)');sh.rotation.z=Math.PI/2;sh.position.set(s*4.45,2.25,z);g.add(sh);
+   g.add(at(mesh(blades,M.fan,'Вентилатори (ладење ONAF)'),s*4.42,2.25,z));
+   g.add(at(mesh(guard,M.steelDark,'Вентилатори (ладење ONAF)'),s*4.57,2.25,z));
+  });
  });
  g.add(at(mesh(boxG(1.3,2.6,.8),T,'Регулациона склопка под оптоварување (OLTC)'),-2.1,2.3,-1.65));
- g.add(at(mesh(boxG(.6,.95,.32),M.cab,'Моторен погон на регулационата склопка'),-2.1,1.25,-2.21));
- g.add(at(mesh(boxG(1.1,1.5,.4),M.cab,'Орман за управување на трансформаторот'),2.3,1.75,1.5));
- g.add(at(mesh(boxG(.4,.3,.02),M.white,'Натписна плочка'),1.6,1.6,1.36));
+ const md=cabinet(.6,.95,.32,'Моторен погон на регулационата склопка');md.position.set(-2.1,1.25,-2.21);g.add(md);
+ g.add(at(mesh(cylG(.025,.025,1.7,8),M.steelDark,'Погонска осовина на регулационата склопка'),-1.82,2.6,-2.12));
+ const cc=cabinet(1.1,1.5,.4,'Орман за управување на трансформаторот');cc.position.set(2.3,1.75,1.5);g.add(cc);
+ [2.5,2.2].forEach(y=>g.add(at(mesh(cylG(.08,.08,.03,18),M.white,'Термометри (масло / намотки)'),1.2,y,1.27).rotateX(Math.PI/2)));
+ g.add(at(mesh(boxG(.4,.3,.02),M.white,'Натписна плочка'),.2,1.6,1.36));
+ g.add(at(mesh(ladderGeo(3.0),M.steelDark,'Скали'),-1.6,.8,1.38));
+ g.add(at(mesh(cylG(.12,.12,.12,14),T,'Вентил за растоварување на притисок'),1.9,TOP+.06,-.3));
+ const prd=mesh(sphG(.12),T,'Вентил за растоварување на притисок');prd.position.set(1.9,TOP+.12,-.3);prd.scale.y=.5;g.add(prd);
  PH.forEach(dx=>{
-  g.add(at(mesh(cylG(.27,.27,.45,16),T,'Купола на проводниот изолатор'),dx,TOP+.225,-.75));
+  g.add(at(mesh(cylG(.27,.27,.45,18),T,'Купола со вградени струјни трансформатори'),dx,TOP+.225,-.75));
   g.add(at(insulator(2.3,.12,.21,M.porc,'Проводен изолатор 110 kV'),dx,TOP+.45,-.75));
   g.add(at(mesh(cylG(.13,.16,.22,14),M.alu,'Глава на проводниот изолатор'),dx,TOP+.45+2.3+.11,-.75));
   terms.a.push(new V3(dx,TOP+.45+2.3+.3,-.75));
@@ -373,73 +478,55 @@ function buildTransformer(){
  [-1.1,0,1.1].forEach(lx=>{
   g.add(at(insulator(.75,.09,.16,M.porc,'Проводен изолатор 20 kV'),lx,TOP,.8));
   g.add(at(mesh(cylG(.06,.09,.35,10),M.cable,'Кабелска завршница 20 kV'),lx,TOP+.92,.8));
-  g.add(tube([new V3(lx,TOP+1.08,.8),new V3(lx,TOP+1.35,1.3),new V3(lx,TOP+.6,1.9),new V3(lx,1.2,2.05),new V3(lx,.25,2.5),new V3(lx,-.3,3.3)],.045,M.cable,'Кабли 20 kV (кон командната зграда)',40));
  });
- const cons=mesh(cylG(.5,.5,3.4,20),T,'Конзерватор (дилатациски сад за масло)');cons.rotation.z=Math.PI/2;cons.position.set(-.8,5.65,1.0);g.add(cons);
- [-2.1,.5].forEach(x=>g.add(at(mesh(boxG(.12,1.4,.12),T,'Носач на конзерваторот'),x,TOP+.7,1.0)));
+ const cons=mesh(cylG(.5,.5,3.4,22),T,'Конзерватор (дилатациски сад за масло)');cons.rotation.z=Math.PI/2;cons.position.set(-.8,5.65,1.0);g.add(cons);
+ const oc=mesh(cylG(.32,.32,.7,18),T,'Конзерватор на регулационата склопка');oc.rotation.z=Math.PI/2;oc.position.set(1.35,5.65,1.0);g.add(oc);
+ [-2.1,.5,1.35].forEach(x=>g.add(at(mesh(boxG(.12,1.4,.12),T,'Носач на конзерваторот'),x,TOP+.7,1.0)));
  const gl=mesh(cylG(.16,.16,.04,16),M.white,'Покажувач на ниво на масло');gl.rotation.z=Math.PI/2;gl.position.set(-2.52,5.65,1.0);g.add(gl);
  g.add(at(mesh(cylG(.05,.05,1.31,10),T,'Цевка кон конзерваторот'),-1.6,4.5,1.0));
  g.add(at(mesh(boxG(.26,.2,.22),M.cab,'Бухолц-реле'),-1.6,4.5,1.0));
  g.add(at(mesh(cylG(.09,.09,.45,12),M.orange,'Сушач на воздух (силикагел)'),-2.9,1.7,1.42));
+ g.add(tube([new V3(-2.3,5.15,1.0),new V3(-2.6,4.6,1.3),new V3(-2.9,3.9,1.45),new V3(-2.9,1.95,1.42)],.022,T,'Сушач на воздух (силикагел)',24));
  return {group:g,terms};
 }
-function buildGantry(){
- const g=new THREE.Group(),terms={a:[]};const H=12,HW=5.4;
- [-HW,HW].forEach(x=>{
-  g.add(at(mesh(boxG(1.3,.45,1.3),M.conc,'Бетонски темел'),x,.22,0));
-  g.add(at(mesh(new THREE.CylinderGeometry(.22,.55,H,4),M.steel,'Решеткаст столб'),x,H/2,0).rotateY(Math.PI/4));
+function ladderGeo(h){return cache('lad'+h,()=>{const P=[[new THREE.BoxGeometry(.04,h,.04),M4(-.2,h/2,0)],[new THREE.BoxGeometry(.04,h,.04),M4(.2,h/2,0)]];for(let y=.25;y<h;y+=.3)P.push([new THREE.CylinderGeometry(.012,.012,.4,6),M4(0,y,0,0,0,Math.PI/2)]);return merge(P);});}
+function buildGantry(skipLeft){
+ const g=new THREE.Group(),terms={a:[]};const H=12,HW=4.0;
+ const cg=cache('gcol',()=>latticeCol(H,1.0,.55,1.0,.09,.04));
+ [-HW,HW].forEach((x,i)=>{if(i===0&&skipLeft)return;
+  g.add(at(mesh(boxG(1.5,.45,1.5),M.conc,'Бетонски темел'),x,.22,0));
+  g.add(at(mesh(cg,M.steel,'Решеткаст столб'),x,0,0));
   g.add(at(mesh(cylG(.025,.06,3,6),M.alu,'Громобрански шилец'),x,H+1.5,0));
  });
- g.add(at(mesh(boxG(2*HW+.8,.7,.7),M.steel,'Попречна греда (траверза)'),0,H-.35,0));
+ const bg=cache('gbeam',()=>{const b=latticeCol(2*HW+.6,.75,.75,.75,.07,.035);b.rotateZ(-Math.PI/2);return b;});
+ g.add(at(mesh(bg,M.steel,'Решеткаста траверза'),-HW-.3,H-.35,0));
  PH.forEach(dx=>{
-  const s=mesh(insGeo(1.6,.025,.13,.15,false),M.gIns,'Затезен изолаторски синџир');s.rotation.x=-Math.PI/2;s.position.set(dx,H-.55,-.35);g.add(s);
-  terms.a.push(new V3(dx,H-.55,-2.0));
+  const s=mesh(insGeo(1.6,.025,.13,.15,false),M.gIns,'Затезен изолаторски синџир (стаклени капи)');s.rotation.x=-Math.PI/2;s.position.set(dx,H-.55,-.4);g.add(s);
+  g.add(at(mesh(boxG(.08,.08,.3),M.alu,'Затезна стега'),dx,H-.55,-2.1));
+  terms.a.push(new V3(dx,H-.55,-2.25));
  });
  return {group:g,terms};
 }
-function buildBus(){
- const g=new THREE.Group();const XS=[-21,-10,0,10,19],BX0=-22.5,BX1=20;
- BZ.forEach(z=>{
-  XS.forEach(x=>{g.add(at(column(6.8,.32),x,0,z));g.add(at(insulator(1.6,.1,.17,M.porc,'Потпорен изолатор'),x,6.82,z));g.add(at(mesh(boxG(.22,.1,.18),M.alu,'Стега за цевката'),x,8.47,z));});
-  const t=mesh(cylG(.06,.06,BX1-BX0,14),M.alu,'Цевни собирници (AlMgSi)');t.rotation.z=Math.PI/2;t.position.set((BX0+BX1)/2,BUSY,z);g.add(t);
-  [BX0,BX1].forEach(x=>g.add(at(mesh(sphG(.075),M.alu,'Завршна капа'),x,BUSY,z)));
+function buildBus(zs){
+ const g=new THREE.Group();const XS=[-28.4,-20,-12,-4,4,12,20,28.4],BX0=-29,BX1=29;
+ zs.forEach(z=>{
+  XS.forEach(x=>{g.add(at(column(6.8,.32),x,0,z));g.add(at(insulator(1.6,.1,.17,M.porc,'Потпорен изолатор'),x,6.82,z));g.add(at(mesh(boxG(.24,.1,.2),M.alu,'Стега за цевката'),x,8.47,z));});
+  const t=mesh(cylG(.06,.06,BX1-BX0,14),M.alu,'Цевни собирници (AlMgSi)');t.rotation.z=Math.PI/2;t.position.set(0,BUSY,z);g.add(t);
+  [BX0,BX1].forEach(x=>g.add(at(mesh(sphG(.085),M.alu,'Завршна капа (против корона)'),x,BUSY,z)));
+  [-27.3,-11.1,3.1,19.1].forEach(x=>g.add(at(mesh(cylG(.078,.078,.26,14),M.alu,'Дилатациски спој'),x,BUSY,z).rotateZ(Math.PI/2)));
  });
  return {group:g,terms:{}};
 }
 function buildMast(){
  const g=new THREE.Group();
  g.add(at(mesh(boxG(1.2,.5,1.2),M.conc,'Бетонски темел'),0,.25,0));
- g.add(at(mesh(cylG(.12,.38,22,8),M.steel,'Челичен столб'),0,11.5,0));
+ g.add(at(mesh(cylG(.12,.38,22,10),M.steel,'Челичен столб'),0,11.5,0));
+ [7,15].forEach(y=>g.add(at(mesh(cylG(.34-.011*y,.34-.011*y,.08,12),M.steel,'Челичен столб'),0,y,0)));
  g.add(at(mesh(cylG(.015,.04,2.5,6),M.alu,'Громобрански шилец (фаќач)'),0,23.75,0));
  g.add(at(mesh(boxG(.06,.6,.03),M.copper,'Приклучок на заземјувањето'),.4,.8,0));
  return {group:g,terms:{}};
 }
-function buildFirewall(){const g=new THREE.Group();g.add(at(mesh(boxG(.3,7.5,9),M.conc,'Армирано-бетонски ѕид'),0,3.75,0));return {group:g,terms:{}};}
-function buildSWG(n=12){
- const g=new THREE.Group();const w=.8,x0=-(n*w)/2+w/2;
- for(let i=0;i<n;i++){const cx=x0+i*w;
-  g.add(at(mesh(boxG(.78,2.3,1.5),M.swg,'Метален оклоп на ќелијата'),cx,1.15,0));
-  g.add(at(mesh(boxG(.66,.95,.03),M.swgDoor,'Прекинувачки оддел (вакуумски прекинувач на количка)'),cx,.8,-.765));
-  g.add(at(mesh(boxG(.2,.14,.02),M.dark,'Прозорче за положбата на количката'),cx,.98,-.785));
-  g.add(at(mesh(boxG(.66,.5,.03),M.swgDoor,'Нисконапонски оддел (заштита и управување)'),cx,1.88,-.765));
-  g.add(at(mesh(boxG(.16,.12,.02),M.lcd,'Нумеричко реле'),cx-.14,1.92,-.785));
-  g.add(at(mesh(boxG(.05,.05,.02),M.red,'Сигнални ламби'),cx+.12,1.95,-.785));
-  g.add(at(mesh(boxG(.05,.05,.02),M.green,'Сигнални ламби'),cx+.22,1.95,-.785));
-  g.add(at(mesh(boxG(.56,.035,.01),M.dark,'Мнемоничка шема'),cx,1.48,-.775));
-  g.add(at(mesh(boxG(.78,.22,1.2),M.swg,'Канал за растоварување на притисок од лак'),cx,2.41,.1));
- }
- return {group:g,terms:{}};
-}
-function buildRelay(n=7){
- const g=new THREE.Group();const w=.8,x0=-(n*w)/2+w/2;
- for(let i=0;i<n;i++){const cx=x0+i*w;
-  g.add(at(mesh(boxG(.78,2.1,.6),M.cab,'Орман'),cx,1.15,0));
-  g.add(at(mesh(boxG(.78,.1,.6),M.dark,'Подножје'),cx,.05,0));
-  [1.75,1.35,.95].forEach(y=>{g.add(at(mesh(boxG(.5,.26,.1),M.dark,'Нумеричко реле (заштита на поле)'),cx,y,-.27));g.add(at(mesh(boxG(.14,.09,.01),M.lcd,'Нумеричко реле (заштита на поле)'),cx-.12,y+.03,-.325));});
-  g.add(at(mesh(boxG(.7,1.85,.02),M.glass,'Стаклена врата'),cx,1.2,-.34));
- }
- return {group:g,terms:{}};
-}
+function buildFirewall(){const g=new THREE.Group();g.add(at(mesh(boxG(.3,7.5,9),M.conc,'Армирано-бетонски ѕид'),0,3.75,0));g.add(at(mesh(boxG(.42,.12,9.1),M.conc,'Армирано-бетонски ѕид'),0,7.56,0));return {group:g,terms:{}};}
 function buildAux(){
  const g=new THREE.Group();
  g.add(at(mesh(boxG(2.6,.3,2.2),M.conc,'Бетонски темел'),0,.15,0));
@@ -460,70 +547,271 @@ function place(type,built,bay,x,z,rotY,name,view){
  for(const k in built.terms)el.terms[k]=built.terms[k].map(v=>g.localToWorld(v.clone()));
  el.anims=[];g.traverse(o=>{if(o.userData.anim)el.anims.push(o);});
  if(type==='cb')el.state={closed:true};
- if(type==='ds'||type==='dse')el.state={open:false,earth:false};
+ if(type==='bds'||type==='dse')el.state={open:false,earth:false};
  ELS.push(el);
  if(!BAYS[bay]){BAYS[bay]={name:bay,els:[]};ORDER.push(bay);}
  BAYS[bay].els.push(el);if(type==='cb')BAYS[bay].cb=el;
  return el;
 }
-function busDrop(p,k){const q=new V3(p.x,BUSY,BZ[k]);wire([p,new V3(p.x,p.y+.8,p.z+(q.z-p.z)*.22),new V3(p.x,BUSY-.6,p.z+(q.z-p.z)*.8),q]);}
 function nearestX(list,p){let b=list[0];list.forEach(v=>{if(Math.abs(v.x-p.x)<Math.abs(b.x-p.x))b=v;});return b;}
-
+function busDis(bay,x,side,sys,closed){
+ const Z=sys===1?S1:S2;
+ const el=place('bds',buildPanto(PH.map((p,k)=>[side>0?p:-p,Z[k]])),bay,x,0,0,'Собирнички раставувач СС'+sys);
+ el.sys=sys;
+ if(!closed){el.state.open=true;el.anims.forEach(a=>{const A=a.userData.anim;A.v=A.o;setPanto(a,A.o);});}
+ return el;
+}
 function buildTower(x,z){
  const g=new THREE.Group();
- g.add(at(new THREE.Mesh(new THREE.CylinderGeometry(.45,1.6,26,4),M.steel),0,13,0).rotateY(Math.PI/4));
- g.add(at(new THREE.Mesh(boxG(9,.5,.6),M.steel),0,18,0));g.add(at(new THREE.Mesh(boxG(3,.35,.4),M.steel),0,25.4,0));
- const pts=[];PH.forEach(dx=>{const xx=dx*1.8;const s=new THREE.Mesh(insGeo(1.5,.025,.13,.15,false),M.gIns);s.position.set(xx,16.25,0);g.add(s);pts.push(new V3(x+xx,16.2,z));});
- g.position.set(x,0,z);g.traverse(o=>{if(o.isMesh)o.castShadow=true;});scene.add(g);return pts;
+ g.add(new THREE.Mesh(cache('tow',()=>latticeCol(26,3.2,.8,2.0,.12,.06)),M.steel));
+ g.add(at(new THREE.Mesh(cache('tarm',()=>{const b=latticeCol(8,.6,.6,.8,.07,.035);b.rotateZ(-Math.PI/2);return b;}),M.steel),-4,17.7,0));
+ g.add(at(new THREE.Mesh(cache('tpk',()=>{const b=latticeCol(3,.5,.5,.75,.06,.03);b.rotateZ(-Math.PI/2);return b;}),M.steel),-1.5,25.4,0));
+ const ph=[];PH.forEach(dx=>{const xx=dx*1.6;const s=new THREE.Mesh(insGeo(1.5,.025,.13,.15,false),M.gIns);s.position.set(xx,15.9,0);g.add(s);ph.push(new V3(x+xx,15.85,z));});
+ g.position.set(x,0,z);g.traverse(o=>{if(o.isMesh)o.castShadow=true;});scene.add(g);
+ return {ph,pk:[new V3(x-1.4,25.7,z),new V3(x+1.4,25.7,z)]};
 }
-
-function lineBay(name,x){
- const bd=place('ds',buildDisconnector(false),name,x,-5.5,0,'Собирнички раставувач');
+function lineBay(name,x,sys,skipLeft,twx,twz,farx){
+ const p1=busDis(name,x,1,1,sys===1),p2=busDis(name,x,1,2,sys===2);
  const cb=place('cb',buildBreaker(),name,x,-10.5,0,'Прекинувач 110 kV');
  const ct=place('ct',buildCT(),name,x,-15,0,'Струен мерен трансформатор');
- const ld=place('dse',buildDisconnector(true),name,x,-19.5,0,'Линиски раставувач со заземјувач');
+ const ld=place('dse',buildLineDisconnector(),name,x,-19.5,0,'Линиски раставувач со заземјувач');
  const cv=place('cvt',buildCVT(),name,x,-23.5,0,'Капацитивен напонски мерен трансформатор');
  const sa=place('sa',buildSA(),name,x,-26.5,0,'Одводник на пренапони');
- const gn=place('gantry',buildGantry(),name,x,-29.5,0,'Влезен портал',{pos:[x+3.8,-16.5],look:[x,8.5,-29.5]});
- const tw=buildTower(x,-62);
+ const gn=place('gantry',buildGantry(skipLeft),name,x,-29.5,0,'Влезен портал',{pos:[x+3.8,-16.5],look:[x,8.5,-29.5]});
+ const tw=buildTower(twx,twz);
  for(let k=0;k<3;k++){
-  busDrop(bd.terms.a[k],k);
-  wire(span(bd.terms.b[k],cb.terms.a[k],.15));wire(span(cb.terms.b[k],ct.terms.a[k],.1));wire(span(ct.terms.b[k],ld.terms.a[k],.1));
-  const dx=bd.terms.a[k].x;const pS=new V3(dx,6.6,-26.5),pC=new V3(dx,6.4,-23.5);
-  wire([gn.terms.a[k],new V3(dx,10.6,-30.7),new V3(dx,9.7,-28.9),new V3(dx,7.6,-27.6),pS,pC,ld.terms.b[k]]);
+  wire(span(p2.terms.a[k],p1.terms.a[k],.15,12));wire(span(p1.terms.a[k],cb.terms.a[k],.12));
+  wire(span(cb.terms.b[k],ct.terms.a[k],.1));wire(span(ct.terms.b[k],ld.terms.a[k],.1));
+  const dx=cb.terms.a[k].x;const pS=new V3(dx,6.6,-26.5),pC=new V3(dx,6.4,-23.5);
+  wire([gn.terms.a[k],new V3(dx,10.6,-30.8),new V3(dx,9.7,-28.9),new V3(dx,7.6,-27.6),pS,pC,ld.terms.b[k]]);
   wire([pS,sa.terms.a[k]]);wire([pC,cv.terms.a[k]]);
-  wire(span(gn.terms.a[k],tw[k],1.2,14));wire(span(tw[k],new V3(tw[k].x,15.5,-230),5,24));
+  wire(span(gn.terms.a[k],tw.ph[k],1.2,16));wire(span(tw.ph[k],new V3(tw.ph[k].x+farx,15.5,-240),5,24));
  }
+ wire(span(new V3(x-4,15,-29.5),tw.pk[0],.8,16),.012);wire(span(new V3(x+4,15,-29.5),tw.pk[1],.8,16),.012);
 }
-function trBay(name,x,trName){
- const bd=place('ds',buildDisconnector(false),name,x,5.5,Math.PI,'Собирнички раставувач');
+function trBay(name,x,sys,trName){
+ const p1=busDis(name,x,-1,1,sys===1),p2=busDis(name,x,-1,2,sys===2);
  const cb=place('cb',buildBreaker(),name,x,10.5,Math.PI,'Прекинувач 110 kV');
  const ct=place('ct',buildCT(),name,x,15,Math.PI,'Струен мерен трансформатор');
  const sa=place('sa',buildSA(),name,x,19.3,Math.PI,'Одводник на пренапони');
  const tr=place('tr',buildTransformer(),name,x,24.5,0,trName,{pos:[x+(x>0?3.5:-3.5),32.8],look:[x,3.2,24.5]});
  for(let k=0;k<3;k++){
-  busDrop(bd.terms.a[k],k);
-  wire(span(bd.terms.b[k],cb.terms.a[k],.15));wire(span(cb.terms.b[k],ct.terms.a[k],.1));
+  wire(span(p1.terms.a[k],p2.terms.a[k],.15,12));wire(span(p2.terms.a[k],cb.terms.a[k],.12));
+  wire(span(cb.terms.b[k],ct.terms.a[k],.1));
   const p=ct.terms.b[k],hv=nearestX(tr.terms.a,p),sp=nearestX(sa.terms.a,p);const xx=p.x;
   const pS=new V3(xx,6.6,19.3);
   wire([p,new V3(xx,5.9,17.3),pS,new V3(xx,7.1,21.8),hv]);wire([pS,sp]);
  }
 }
-lineBay('ДВ поле 1',-15);
-lineBay('ДВ поле 2',-3);
-(function measBay(){const n='Мерно поле 110 kV',x=12;
- const bd=place('ds',buildDisconnector(false),n,x,-5.5,0,'Собирнички раставувач');
- const vt=place('vt',buildVT(),n,x,-10.5,0,'Индуктивен напонски мерен трансформатор');
- for(let k=0;k<3;k++){busDrop(bd.terms.a[k],k);wire(span(bd.terms.b[k],vt.terms.a[k],.15));}
-})();
-place('bus',buildBus(),'Собирници 110 kV',0,0,0,'Собирници 110 kV',{pos:[-.5,-7.5],look:[-1,7.5,0]});
-trBay('ТР поле Т1',-7,'Енергетски трансформатор Т1');
-trBay('ТР поле Т2',7,'Енергетски трансформатор Т2');
+function measBay(name,x,side,sys){
+ const p=busDis(name,x,side,sys,true);
+ const vt=place('vt',buildVT(),name,x,side>0?-10.5:10.5,side>0?0:Math.PI,'Индуктивен напонски мерен трансформатор');
+ for(let k=0;k<3;k++)wire(span(p.terms.a[k],vt.terms.a[k],.15));
+}
+function couplerBay(x){
+ const n='Спојно поле';
+ const p1=busDis(n,x,1,1,true),p2=busDis(n,x,1,2,true);
+ const cb=place('cb',buildBreaker(),n,x,0,0,'Спојен прекинувач 110 kV');
+ cb.note='Спојното поле ги поврзува собирниците СС1 и СС2. Додека е вклучено (прекинувачот и двата собирнички раставувачи), полињата смеат да се префрлаат од едните на другите собирници под оптоварување.';
+ for(let k=0;k<3;k++){wire(span(p1.terms.a[k],cb.terms.b[k],.1));wire(span(cb.terms.a[k],p2.terms.a[k],.1));}
+}
+// north side: lines + VT of СС1 + coupler; south side: transformers + VT of СС2
+lineBay('ДВ поле 1',-24,1,false,-24,-62,-40);
+lineBay('ДВ поле 2',-16,2,true,-14,-80,25);
+measBay('Мерно поле СС1',16,1,1);
+couplerBay(0);
+place('bus',buildBus(S1),'Собирници 110 kV',0,0,0,'Собирници СС1',{pos:[-12,-9],look:[-8,7.5,-4]});
+place('bus',buildBus(S2),'Собирници 110 kV',0,0,0,'Собирници СС2',{pos:[-4,9.2],look:[-4,7.5,4]});
+trBay('ТР поле Т1',-8,1,'Енергетски трансформатор Т1');
+trBay('ТР поле Т2',8,2,'Енергетски трансформатор Т2');
+measBay('Мерно поле СС2',24,-1,2);
 place('fw',buildFirewall(),'Општо',0,24.5,0,'Противпожарен ѕид',{pos:[0,31.5],look:[0,3,24.5]});
-[[-27,4],[25,4],[-27,27],[25,22]].forEach(([x,z],i)=>place('mast',buildMast(),'Општо',x,z,0,'Громобрански столб '+(i+1),{pos:[x+(x<0?5:-5),z],look:[x,9,z]}));
+[[-32,-18],[30,-18],[-32,26],[30,22]].forEach(([x,z],i)=>place('mast',buildMast(),'Општо',x,z,0,'Громобрански столб '+(i+1),{pos:[x+(x<0?5:-5),z],look:[x,9,z]}));
 place('aux',buildAux(),'Општо',17.5,38,0,'Трансформатор за сопствена потрошувачка',{pos:[17.5,34.6],look:[17.5,1,38]});
 
 /* ---------- control building ---------- */
+M.inwall=std(0xe9e5dc,.9,0);M.swgIn=std(0xa9aeb0,.6,.3);M.epoxy=std(0x6b4f3a,.35,.05);M.desk=std(0x8a6a4b,.7,0);M.batt=std(0x30353a,.55,.1);
+M.winIn=std(0x9fbad0,.2,0,{emissive:0x6f8fa8,emissiveIntensity:.3});M.clear=std(0xdcecf2,.05,.1,{transparent:true,opacity:.16,depthWrite:false});M.yellow=std(0xe7c12b,.5,0);M.fire=std(0xc62828,.4,.1);
+function cvTex(key,w,h,draw){return cache('tx'+key,()=>{const c=document.createElement('canvas');c.width=w;c.height=h;const g=c.getContext('2d');draw(g,w,h);const t=new THREE.CanvasTexture(c);t.anisotropy=4;return t;});}
+const texMat=(key,w,h,draw)=>cache('tm'+key,()=>new THREE.MeshStandardMaterial({map:cvTex(key,w,h,draw),roughness:.55,metalness:.12}));
+function rr(g,x,y,w,h,fill,stroke,lw){if(fill){g.fillStyle=fill;g.fillRect(x,y,w,h);}if(stroke){g.strokeStyle=stroke;g.lineWidth=lw||1.5;g.strokeRect(x,y,w,h);}}
+function circ(g,x,y,r,fill,stroke,lw){g.beginPath();g.arc(x,y,r,0,7);if(fill){g.fillStyle=fill;g.fill();}if(stroke){g.strokeStyle=stroke;g.lineWidth=lw||1.5;g.stroke();}}
+function txt(g,s,x,y,size,col,w,al){g.fillStyle=col||'#111';g.font=(w||600)+' '+size+'px Inter, Arial, sans-serif';g.textAlign=al||'center';g.textBaseline='middle';g.fillText(s,x,y);}
+// front of a 20 kV metal-clad cell (200 x 590 px  =  0.78 x 2.3 m)
+function cellMat(label,kind){return texMat('cell'+label,200,590,(g,w,h)=>{
+ rr(g,0,0,w,h,'#d9dcda');rr(g,6,6,w-12,146,'#d2d6d4','#8f9593',2);rr(g,6,158,w-12,236,'#d2d6d4','#8f9593',2);rr(g,6,400,w-12,184,'#d2d6d4','#8f9593',2);
+ rr(g,18,14,164,26,'#fff','#333',1);txt(g,label,100,27,14,'#111',700);
+ rr(g,20,50,88,58,'#2b2f34');rr(g,26,56,76,34,'#5fb0c8');for(let i=0;i<3;i++)rr(g,30,61+i*9,40+i*8,3,'#1d4e5c');
+ for(let i=0;i<6;i++)circ(g,124+(i%2)*22,56+Math.floor(i/2)*16,5,['#3fbf7f','#e5533d','#f2b632','#3fbf7f','#888','#888'][i]);
+ for(let i=0;i<4;i++)rr(g,24+i*20,116,14,10,'#555');rr(g,120,112,52,22,'#e5533d');txt(g,'I',134,123,12,'#fff',700);rr(g,148,112,24,22,'#3fbf7f');txt(g,'O',160,123,12,'#fff',700);
+ // mimic diagram
+ g.strokeStyle='#1d2a5a';g.lineWidth=4;g.beginPath();g.moveTo(14,172);g.lineTo(186,172);g.stroke();
+ g.beginPath();g.moveTo(60,172);g.lineTo(60,236);g.stroke();
+ if(kind==='m'){circ(g,60,262,14,null,'#1d2a5a',3);circ(g,60,280,14,null,'#1d2a5a',3);}
+ else if(kind==='r'){g.beginPath();g.moveTo(60,236);g.lineTo(60,380);g.stroke();}
+ else{rr(g,46,236,28,28,'#e5533d','#1d2a5a',3);g.beginPath();g.moveTo(60,264);g.lineTo(60,380);g.stroke();
+  g.beginPath();g.moveTo(60,330);g.lineTo(80,330);g.lineTo(92,318);g.stroke();g.beginPath();g.moveTo(96,330);g.lineTo(96,342);g.moveTo(88,342);g.lineTo(104,342);g.moveTo(91,348);g.lineTo(101,348);g.stroke();
+  if(kind==='i'){circ(g,60,365,10,null,'#1d2a5a',3);}else{g.beginPath();g.moveTo(52,370);g.lineTo(60,382);g.lineTo(68,370);g.stroke();}}
+ rr(g,112,190,62,52,'#22272b','#555',2);rr(g,120,198,46,36,'#3a4248');txt(g,'положба',143,252,10,'#333',500);
+ circ(g,143,296,9,'#333','#777',2);txt(g,'извлекување',143,314,9,'#333',500);
+ for(let i=0;i<3;i++)circ(g,122+i*21,360,6,'#f2d03b','#555',1.5);txt(g,'L1  L2  L3',143,376,9,'#333',600);
+ circ(g,60,460,9,'#333','#777',2);txt(g,'заземјувач',60,478,10,'#333',500);
+ rr(g,168,470,10,52,'#555');txt(g,'Кабелски оддел',100,560,11,'#444',600);
+ rr(g,10,200,6,30,'#777');rr(g,10,330,6,30,'#777');rr(g,10,440,6,30,'#777');rr(g,10,530,6,30,'#777');
+});}
+const CELLS=[['Извод 1','f'],['Извод 2','f'],['Извод 3','f'],['Мерна С-I','m'],['Довод Т1','i'],['ТСП 1','t'],['Спојна','c'],['Подизна','r'],['Довод Т2','i'],['Мерна С-II','m'],['Извод 4','f'],['Извод 5','f']];
+function buildSWG(){
+ const g=new THREE.Group();const w=.8,n=CELLS.length,x0=-(n*w)/2+w/2;
+ CELLS.forEach(([lab,k],i)=>{const cx=x0+i*w;
+  g.add(at(mesh(boxG(.79,2.3,1.6),M.swg,'Метален оклоп на ќелијата'),cx,1.15,0));
+  const f=new THREE.Mesh(new THREE.PlaneGeometry(.78,2.3),cellMat(lab,k));f.position.set(cx,1.15,-.802);f.rotation.y=Math.PI;f.receiveShadow=true;f.userData.part='Врати на ќелијата (мнемоничка шема, реле, показни ламби)';g.add(f);
+  g.add(at(mesh(boxG(.79,.22,1.3),M.swg,'Канал за растоварување на притисок од лак'),cx,2.41,.1));
+  g.add(at(mesh(boxG(.03,.14,.04),M.dark,'Рачки на вратите'),cx+.31,.95,-.82));g.add(at(mesh(boxG(.03,.14,.04),M.dark,'Рачки на вратите'),cx+.31,.2,-.82));
+ });
+ return {group:g,terms:{}};
+}
+const P20=[-.24,0,.24],BZ20=[.25,.45,.65];
+function buildSWGOpen(){
+ const g=new THREE.Group(),W=.79,D=1.6,Hh=2.3,P='Метален оклоп на ќелијата',PI='Преградни метални ѕидови меѓу одделите';
+ g.add(at(mesh(boxG(W,Hh,.02),M.swg,P),0,Hh/2,D/2-.01));g.add(at(mesh(boxG(.02,Hh,D),M.swg,P),-W/2+.01,Hh/2,0));g.add(at(mesh(boxG(W,.02,D),M.swg,P),0,Hh-.01,0));
+ g.add(mesh(cache('swofr',()=>merge([[new THREE.BoxGeometry(.03,Hh,.03),M4(W/2-.015,Hh/2,-D/2+.015)],[new THREE.BoxGeometry(.03,Hh,.03),M4(W/2-.015,Hh/2,D/2-.015)],[new THREE.BoxGeometry(.03,.03,D),M4(W/2-.015,Hh-.015,0)],[new THREE.BoxGeometry(.03,.03,D),M4(W/2-.015,.015,0)]])),M.steelDark,P));
+ const gl=mesh(boxG(.012,Hh-.04,D-.04),M.clear,'Проѕирен страничен ѕид (само за приказ)');gl.position.set(W/2-.006,Hh/2,0);gl.castShadow=false;gl.userData.noPick=true;g.add(gl);
+ g.add(at(mesh(boxG(W,.22,1.3),M.swg,'Канал за растоварување на притисок од лак'),0,2.41,.1));
+ g.add(at(mesh(boxG(W-.04,.015,D-.04),M.swgIn,PI),0,1.62,0));
+ g.add(at(mesh(boxG(W-.04,1.0,.015),M.swgIn,PI),0,1.1,.1));
+ g.add(at(mesh(boxG(W-.04,.015,.86),M.swgIn,PI),0,.6,-.35));
+ g.add(at(mesh(boxG(W-.04,.66,.015),M.swgIn,PI),0,1.96,-.12));
+ // LV compartment (closed) and lower front cover
+ g.add(at(mesh(boxG(.76,.64,.02),M.swgDoor,'Нисконапонски оддел (заштита и управување)'),0,1.96,-D/2+.01));
+ g.add(at(mesh(boxG(.16,.12,.02),M.lcd,'Нумеричко реле на изводот'),-.14,2.0,-D/2-.005));
+ g.add(at(mesh(boxG(.76,.58,.02),M.swgDoor,'Капак на кабелскиот оддел'),0,.3,-D/2+.01));
+ const dr=new THREE.Group();dr.position.set(-W/2+.01,0,-D/2);dr.add(at(mesh(boxG(.74,1.0,.02),M.swgDoor,'Врата на прекинувачкиот оддел (отворена)'),.37,1.1,-.012));
+ dr.add(at(mesh(boxG(.2,.14,.025),M.dark,'Врата на прекинувачкиот оддел (отворена)'),.5,1.25,-.012));dr.rotation.y=1.75;g.add(dr);
+ // spouts (fixed contacts) on the partition, shutters in front of them
+ P20.forEach(px=>[1.35,.85].forEach((y,j)=>{const s=mesh(cylG(.05,.055,.18,14),M.epoxy,j?'Долни контактни гнезда (кон кабелскиот оддел)':'Горни контактни гнезда (кон собирниците)');s.rotation.x=Math.PI/2;s.position.set(px,y,.0);g.add(s);
+  const c=mesh(cylG(.022,.022,.06,10),M.copper,'Контактни гнезда');c.rotation.x=Math.PI/2;c.position.set(px,y,-.1);g.add(c);}));
+ [[1.35,.26],[.85,-.26]].forEach(([y,dy],i)=>{const sh=mesh(boxG(.72,.2,.012),M.swgIn,'Метални ролетни (шатери) пред гнездата');sh.position.set(0,y,-.14);sh.userData.anim={k:'truck',kind:'pos',axis:'y',o:y,c:y+dy,v:y};g.add(sh);});
+ // copper links to the 20 kV busbars, current transformers, cable terminations
+ const CU=[],ct=[];P20.forEach((px,k)=>{CU.push([new THREE.BoxGeometry(.04,.04,.06),M4(px,1.35,.12)],[new THREE.BoxGeometry(.04,.56,.012),M4(px,1.63,.15)],[new THREE.BoxGeometry(.04,.012,BZ20[k]-.15),M4(px,1.91,(BZ20[k]+.15)/2)]);
+  CU.push([new THREE.BoxGeometry(.04,.012,.42),M4(px,.85,.3)],[new THREE.BoxGeometry(.04,.12,.012),M4(px,.79,.51)]);});
+ g.add(mesh(cache('swocu',()=>merge(CU)),M.copper,'Бакарни спојни шини'));
+ P20.forEach(px=>{g.add(at(mesh(boxG(.16,.2,.14),M.epoxy,'Струјни мерни трансформатори (епоксидни)'),px,.85,.32));
+  g.add(at(mesh(cylG(.028,.04,.3,12),M.cable,'Кабелски завршници 20 kV'),px,.58,.51));
+  g.add(tube([new V3(px,.43,.51),new V3(px,.2,.52),new V3(px,.02,.55)],.03,M.cable,'Кабли 20 kV',10));
+  g.add(at(mesh(boxG(.05,.04,.05),M.copper,'Фиксен контакт на заземјувачот'),px,.77,.53));
+  const e=new THREE.Group();e.position.set(px,.3,.68);e.add(at(mesh(boxG(.03,.5,.03),M.alu,'Нож на заземјувачот'),0,.25,0));e.userData.anim={k:'earth',o:-1.25,c:-.3,axis:'x'};e.rotation.x=-.3;g.add(e);});
+ g.add(at(mesh(cylG(.02,.02,.7,8),M.steelDark,'Погонска осовина на заземјувачот'),0,.3,.68).rotateZ(Math.PI/2));
+ // service trolley (static) and withdrawable vacuum circuit breaker truck
+ const TP='Сервисна количка';
+ g.add(mesh(cache('swotrol',()=>merge([[new THREE.BoxGeometry(.7,.03,.6),M4(0,.6,-1.25)],...[[-.32,-1.52],[.32,-1.52],[-.32,-.98],[.32,-.98]].map(([x,z])=>[new THREE.BoxGeometry(.03,.6,.03),M4(x,.3,z)]),[new THREE.BoxGeometry(.7,.03,.03),M4(0,.12,-1.52)],[new THREE.BoxGeometry(.7,.03,.03),M4(0,.12,-.98)]])),M.steelDark,TP));
+ const tr=new THREE.Group();tr.position.set(0,.615,-1.25);tr.userData.anim={k:'truck',kind:'pos',axis:'z',o:-1.25,c:-.42,v:-1.25};
+ tr.add(at(mesh(boxG(.62,.12,.55),M.dark,'Извлеклива количка'),0,.06,0));
+ [[-.27,-.22],[.27,-.22],[-.27,.22],[.27,.22]].forEach(([x,z])=>{const w=mesh(cylG(.04,.04,.03,12),M.steelDark,'Извлеклива количка');w.rotation.z=Math.PI/2;w.position.set(x,.02,z);tr.add(w);});
+ tr.add(at(mesh(boxG(.64,.5,.06),M.cab,'Погонски механизам на вакуумскиот прекинувач'),0,.37,-.3));
+ const indMat=M.green.clone();tr.add(at(mesh(boxG(.12,.08,.01),indMat,'Покажувач на положба (I / O)'),-.15,.47,-.335));
+ tr.add(at(mesh(boxG(.06,.06,.01),M.red,'Тастери за вклучување / исклучување'),.1,.47,-.335));tr.add(at(mesh(boxG(.06,.06,.01),M.green,'Тастери за вклучување / исклучување'),.2,.47,-.335));
+ tr.add(at(mesh(cylG(.025,.025,.02,10),M.white,'Отвор за извлекување (вртење со рачка)'),0,.25,-.335).rotateX(Math.PI/2));
+ P20.forEach(px=>{tr.add(at(mesh(cylG(.06,.06,.46,16),M.epoxy,'Вакуумска гасилна комора (во епоксиден пол)'),px,.48,.05));
+  [.735,.235].forEach(y=>{const a=mesh(cylG(.025,.025,.3,10),M.alu,'Приклучни раце со тулипан-контакти');a.rotation.x=Math.PI/2;a.position.set(px,y,.2);tr.add(a);
+   const t=mesh(cylG(.04,.04,.06,12),M.copper,'Приклучни раце со тулипан-контакти');t.rotation.x=Math.PI/2;t.position.set(px,y,.36);tr.add(t);});});
+ g.add(tr);
+ return {group:g,terms:{},indMat};
+}
+function buildBus20(){
+ const g=new THREE.Group(),x0=-9.2,x1=1.17;
+ BZ20.forEach(z=>g.add(at(mesh(boxG(x1-x0,.08,.012),M.copper,'Бакарни собирнички шини 20 kV'),(x0+x1)/2,1.95,43.9+z)));
+ const S=[];for(let x=x0+.4;x<x1;x+=.8)BZ20.forEach(z=>S.push([new THREE.CylinderGeometry(.025,.03,.2,10),M4(x,1.81,43.9+z)]));
+ g.add(mesh(merge(S),M.epoxy,'Потпорни изолатори (епоксидни)'));
+ return {group:g,terms:{}};
+}
+const RELAYS=[['=E01','ДВ поле 1','Дистантна заштита'],['=E02','ДВ поле 2','Дистантна заштита'],['=E05','Т1','Диференцијална заштита'],['=E06','Т2','Диференцијална заштита'],['=E10','110 kV','Собирничка заштита'],['=E20','Станица','Станичен компјутер / RTU']];
+function relayMat(code,bay,fn){return texMat('rl'+code,200,520,(g,w,h)=>{
+ rr(g,0,0,w,h,'#c4c9c6');rr(g,10,10,180,54,'#fff','#333',1);txt(g,code+'  '+bay,100,28,15,'#111',700);txt(g,fn,100,49,12,'#333',500);
+ for(let j=0;j<3;j++){const y=80+j*118;rr(g,22,y,156,100,'#2b2f34','#111',1);rr(g,32,y+10,78,46,'#5fb0c8');for(let i=0;i<4;i++)rr(g,37,y+16+i*9,30+i*10,3,'#1d4e5c');
+  for(let i=0;i<8;i++)circ(g,124+(i%2)*20,y+14+Math.floor(i/2)*12,4,i<2?'#3fbf7f':(i===2?'#e5533d':'#777'));
+  for(let i=0;i<6;i++)rr(g,34+(i%3)*22,y+66+Math.floor(i/3)*14,16,10,'#555');txt(g,j?'Р'+(j+1):'Р1',150,y+86,11,'#ddd',600);}
+ for(let i=0;i<9;i++){rr(g,16+i*19,450,15,36,'#f4f4f4','#888',1);rr(g,20+i*19,458,7,12,'#222');}txt(g,'Автоматски осигурувачи',100,500,11,'#333',600);
+});}
+function buildRelay(){
+ const g=new THREE.Group(),w=.8,n=RELAYS.length,x0=-(n*w)/2+w/2;
+ RELAYS.forEach(([c,b,f],i)=>{const cx=x0+i*w;
+  g.add(at(mesh(boxG(.78,2.1,.6),M.cab,'Орман'),cx,1.15,0));g.add(at(mesh(boxG(.78,.1,.6),M.dark,'Подножје'),cx,.05,0));
+  const fr=new THREE.Mesh(new THREE.PlaneGeometry(.74,1.92),relayMat(c,b,f));fr.position.set(cx,1.17,-.302);fr.rotation.y=Math.PI;fr.userData.part='Нумерички релеи за заштита и управување';g.add(fr);
+  const gd=mesh(boxG(.72,1.9,.02),M.glass,'Стаклена врата');gd.position.set(cx,1.17,-.33);gd.castShadow=false;gd.userData.noPick=true;g.add(gd);
+  g.add(at(mesh(boxG(.03,.16,.04),M.dark,'Стаклена врата'),cx+.32,1.15,-.35));
+ });
+ return {group:g,terms:{}};
+}
+const BOARDS=[['Исправувач 1','110 V DC · 60 A','r'],['Исправувач 2','110 V DC · 60 A','r'],['DC развод','110 V DC','d'],['AC развод','400/230 V','a'],['AC развод','осветлување · греење','a']];
+function boardMat(t,s,k,i){return texMat('bd'+i,200,520,(g,w,h)=>{
+ rr(g,0,0,w,h,'#c9cecb');rr(g,10,10,180,50,'#fff','#333',1);txt(g,t,100,28,16,'#111',700);txt(g,s,100,48,12,'#333',500);
+ for(let j=0;j<2;j++){const x=55+j*90;circ(g,x,110,32,'#f6f6f2','#333',2);g.strokeStyle='#c33';g.lineWidth=2;g.beginPath();g.moveTo(x,110);g.lineTo(x+18,92);g.stroke();txt(g,k==='a'?(j?'A':'V'):(j?'A':'V'),x,130,12,'#333',700);}
+ if(k==='r'){rr(g,30,170,140,60,'#2b2f34');rr(g,40,180,120,40,'#6fcf97');txt(g,'110,5 V   42 A',100,200,14,'#123',700);txt(g,'Полнење: одржувачко',100,250,11,'#333',600);}
+ for(let r=0;r<(k==='r'?3:6);r++)for(let i=0;i<8;i++){rr(g,18+i*21,(k==='r'?280:170)+r*52,16,38,'#f4f4f4','#888',1);rr(g,22+i*21,(k==='r'?288:178)+r*52,8,12,'#222');}
+ for(let i=0;i<3;i++)circ(g,50+i*50,488,9,['#3fbf7f','#f2b632','#e5533d'][i],'#333',1.5);
+});}
+function buildBoards(){
+ const g=new THREE.Group(),w=.8,n=BOARDS.length,x0=-(n*w)/2+w/2;
+ BOARDS.forEach(([t,s,k],i)=>{const cx=x0+i*w;g.add(at(mesh(boxG(.78,2.1,.6),M.cab,'Орман'),cx,1.15,0));g.add(at(mesh(boxG(.78,.1,.6),M.dark,'Подножје'),cx,.05,0));
+  const fr=new THREE.Mesh(new THREE.PlaneGeometry(.74,1.92),boardMat(t,s,k,i));fr.position.set(cx,1.17,-.302);fr.rotation.y=Math.PI;fr.userData.part=k==='r'?'Исправувачи (полначи на батеријата)':(k==='d'?'DC развод 110 V':'AC развод 0,4 kV');g.add(fr);
+  g.add(at(mesh(boxG(.03,.16,.04),M.dark,'Рачки'),cx+.32,1.15,-.32));});
+ return {group:g,terms:{}};
+}
+function buildBattery(){
+ const g=new THREE.Group(),C=[],T=[],F=[];
+ const rack=(n,ox,oz,alongX)=>{const L=n*.2+.1;
+  [.12,.6,1.08].forEach(y=>{F.push([new THREE.BoxGeometry(alongX?L:.45,.03,alongX?.45:L),M4(ox,y,oz)]);
+   for(let i=0;i<n;i++){const d=-L/2+.15+i*.2;const x=alongX?ox+d:ox,z=alongX?oz:oz+d;C.push([new THREE.BoxGeometry(alongX?.17:.2,.3,alongX?.2:.17),M4(x,y+.165,z)]);
+    [-1,1].forEach(s=>T.push([new THREE.CylinderGeometry(.012,.012,.03,8),M4(alongX?x+s*.05:x,y+.33,alongX?z:z+s*.05)]));
+    if(i<n-1)T.push([new THREE.BoxGeometry(alongX?.12:.015,.01,alongX?.015:.12),M4(alongX?x+.1:x,y+.345,alongX?z:z+.1)]);}});
+  [[-1,-1],[1,-1],[-1,1],[1,1]].forEach(([a,b])=>F.push([new THREE.BoxGeometry(.04,1.5,.04),M4(ox+a*(alongX?L/2:.2),.75,oz+b*(alongX?.2:L/2))]));};
+ rack(12,11.9,44.25,true);rack(6,13.28,42.3,false);
+ g.add(mesh(merge(F),M.steelDark,'Носачи на батеријата'));g.add(mesh(merge(C),M.batt,'Оловни акумулаторски ќелии 2 V (VRLA)'));g.add(mesh(merge(T),M.copper,'Полови и меѓуќелиски врски'));
+ g.add(at(mesh(boxG(.5,.5,.25),M.cab,'Вентилатор за проветрување'),12,3.6,44.57));
+ const sg=new THREE.Mesh(new THREE.PlaneGeometry(.6,.3),texMat('nosmoke',240,120,(c,w,h)=>{rr(c,0,0,w,h,'#fff','#c62828',8);txt(c,'ЗАБРАНЕТО ПУШЕЊЕ',w/2,44,20,'#c62828',800);txt(c,'И ОТВОРЕН ПЛАМЕН',w/2,78,20,'#c62828',800);}));
+ sg.position.set(10.12,1.9,42.5);sg.rotation.y=Math.PI/2;sg.userData.part='Предупредувачки знак';g.add(sg);
+ return {group:g,terms:{}};
+}
+// live SCADA screens
+const scC=document.createElement('canvas');scC.width=1024;scC.height=576;const scT=new THREE.CanvasTexture(scC);
+const evC=document.createElement('canvas');evC.width=512;evC.height=320;const evT=new THREE.CanvasTexture(evC);
+const msC=document.createElement('canvas');msC.width=512;msC.height=320;const msT=new THREE.CanvasTexture(msC);
+const EVT=[];
+function logEv(t,warn){const ts=new Date().toTimeString().slice(0,8);EVT.unshift([ts,t,warn]);if(EVT.length>11)EVT.pop();drawSCADA();}
+function buildSCADA(){
+ const g=new THREE.Group();
+ g.add(at(mesh(boxG(2.4,.05,.8),M.desk,'Работна маса'),0,.74,0));[-1.15,1.15].forEach(x=>g.add(at(mesh(boxG(.05,.72,.76),M.desk,'Работна маса'),x,.36,0)));
+ g.add(at(mesh(boxG(2.3,.5,.03),M.desk,'Работна маса'),0,.45,-.36));
+ [[-.68,evT,.28],[0,scT,0],[.68,msT,-.28]].forEach(([x,tx,ry])=>{const m=new THREE.Group();m.position.set(x,0,-.18);m.rotation.y=ry;
+  m.add(at(mesh(boxG(.64,.4,.04),M.dark,'Монитори (шема · настани · мерења)'),0,1.12,0));
+  const s=new THREE.Mesh(new THREE.PlaneGeometry(.6,.34),new THREE.MeshBasicMaterial({map:tx}));s.position.set(0,1.12,.021);s.userData.part='Монитори (шема · настани · мерења)';m.add(s);
+  m.add(at(mesh(boxG(.05,.3,.05),M.dark,'Монитори (шема · настани · мерења)'),0,.9,-.03));m.add(at(mesh(boxG(.25,.02,.18),M.dark,'Монитори (шема · настани · мерења)'),0,.775,-.03));g.add(m);});
+ g.add(at(mesh(boxG(.45,.02,.15),M.dark,'Тастатура и глушец'),0,.775,.15));g.add(at(mesh(boxG(.06,.02,.1),M.dark,'Тастатура и глушец'),.35,.775,.16));
+ g.add(at(mesh(boxG(.2,.06,.18),M.dark,'Телефон'),-.9,.79,.12));
+ g.add(mesh(cache('chair',()=>merge([[new THREE.BoxGeometry(.5,.08,.5),M4(0,.48,.8)],[new THREE.BoxGeometry(.48,.55,.07),M4(0,.82,1.05,-.12)],[new THREE.CylinderGeometry(.04,.04,.4,8),M4(0,.26,.8)],...[0,1,2,3,4].map(i=>[new THREE.BoxGeometry(.3,.03,.04),M4(Math.cos(i*1.257)*.14,.05,.8+Math.sin(i*1.257)*.14,0,-i*1.257,0)])])),M.dark,'Столица'));
+ return {group:g,terms:{}};
+}
+function buildWall(){
+ const g=new THREE.Group();g.add(at(mesh(boxG(2.75,1.6,.06),M.dark,'Ѕиден приказ'),0,2.55,0));
+ const s=new THREE.Mesh(new THREE.PlaneGeometry(2.6,1.46),new THREE.MeshBasicMaterial({map:scT}));s.position.set(0,2.55,.031);s.userData.part='Еднополна шема во живо';g.add(s);
+ return {group:g,terms:{}};
+}
+function buildSafety(){
+ const g=new THREE.Group();
+ const b=new THREE.Mesh(new THREE.PlaneGeometry(1.7,1.1),texMat('safety',340,220,(c,w,h)=>{rr(c,0,0,w,h,'#f4f1e8','#2e7d32',8);rr(c,0,0,w,34,'#2e7d32');txt(c,'ЗАШТИТНИ СРЕДСТВА',w/2,18,18,'#fff',800);
+  [['ракавици',52,200],['тестер за напон',220,80],['заземјување',282,200],['изолациска мотка',170,158],['шлем',52,96]].forEach(([s,x,y])=>txt(c,s,x,y,11,'#333',600));}));
+ b.position.set(0,1.55,-.012);b.rotation.y=Math.PI;b.userData.part='Табла со заштитни средства';g.add(b);
+ g.add(at(mesh(boxG(1.74,1.14,.02),M.desk,'Табла со заштитни средства'),0,1.55,.0));
+ [.62,.46].forEach(x=>g.add(at(mesh(boxG(.12,.3,.05),M.yellow,'Изолациски ракавици'),x,1.25,-.05)));
+ const vt=mesh(cylG(.022,.022,.75,10),M.yellow,'Тестер (индикатор) за напон');vt.rotation.z=Math.PI/2;vt.position.set(-.2,1.82,-.05);g.add(vt);
+ g.add(at(mesh(cylG(.04,.03,.12,10),M.fire,'Тестер (индикатор) за напон'),-.62,1.82,-.05).rotateZ(Math.PI/2));
+ const st=mesh(cylG(.017,.017,1.45,8),M.dark,'Изолациска мотка');st.rotation.z=Math.PI/2;st.position.set(0,1.45,-.05);g.add(st);
+ g.add(at(mesh(torG(.12,.018),M.copper,'Преносно заземјување (кратко спојување)'),-.5,1.2,-.05));
+ [-.36,-.5,-.64].forEach(x=>g.add(at(mesh(boxG(.05,.08,.04),M.alu,'Преносно заземјување (кратко спојување)'),x,1.02,-.05)));
+ const hm=mesh(new THREE.SphereGeometry(.13,16,10,0,Math.PI*2,0,Math.PI/2),M.white,'Заштитен шлем');hm.position.set(.56,1.72,-.1);g.add(hm);
+ g.add(at(mesh(cylG(.09,.09,.55,14),M.fire,'Противпожарен апарат'),-.9,.28,-.15));g.add(at(mesh(cylG(.03,.03,.1,8),M.dark,'Противпожарен апарат'),-.9,.6,-.15));
+ return {group:g,terms:{}};
+}
 const BLD=new THREE.Group();
 (function building(){
  const bx0=-10,bx1=14,bz0=35,bz1=45,H=4.6,t=.3;
@@ -531,47 +819,260 @@ const BLD=new THREE.Group();
  wall(bx0,1.0,bz0,bz0+t,0,H);wall(2.6,bx1,bz0,bz0+t,0,H);wall(1.0,2.6,bz0,bz0+t,2.5,H);
  wall(bx0,bx1,bz1-t,bz1,0,H);wall(bx0,bx0+t,bz0,bz1,0,H);wall(bx1-t,bx1,bz0,bz1,0,H);
  wall(bx0-.3,bx1+.3,bz0-.3,bz1+.3,H,H+.35,M.roof);
- const fl=wall(bx0,bx1,bz0,bz1,0,.06,M.floor);fl.userData.ground=true;
- [-7.5,-4,5.5,9,12].forEach(x=>{const w=mesh(boxG(1.4,1.0,.04),M.win);w.position.set(x,1.9,bz0-.02);BLD.add(w);});
+ {const c=new THREE.Mesh(new THREE.PlaneGeometry(bx1-bx0-.6,bz1-bz0-.6),std(0xf1efe9,.95,0));c.rotation.x=Math.PI/2;c.position.set((bx0+bx1)/2,H-.01,(bz0+bz1)/2);BLD.add(c);}
+ [[bx0,-6.1,bz0,bz1],[-6.1,-1.45,bz0,42.3],[-6.1,-.55,42.9,bz1],[-.55,bx1,bz0,bz1]].forEach(([a,b,c,d])=>{const f=wall(a,b,c,d,0,.06,M.floor);f.userData.ground=true;});
+ // floor cable channel, ≈0.6 m deep (cables enter from the ground through the foundation)
+ const chM=std(0x9a958d,.95,0);
+ [[-1.45,-1.41,35.3,42.3],[-.59,-.55,35.3,42.9],[-1.45,-.55,35.3,35.34],[-6.1,-1.45,42.3,42.34],[-6.1,-.55,42.86,42.9],[-6.1,-6.06,42.3,42.9]].forEach(([a,b,c,d])=>{const w=wall(a,b,c,d,-.6,.06,chM);w.userData.noCollide=true;});
+ [[-1.45,-.55,35.3,42.9],[-6.1,-1.45,42.3,42.9]].forEach(([a,b,c,d])=>{const f=new THREE.Mesh(new THREE.PlaneGeometry(b-a,d-c),chM);f.rotation.x=-Math.PI/2;f.position.set((a+b)/2,-.6,(c+d)/2);f.receiveShadow=true;f.userData.ground=true;BLD.add(f);});
+ BLD.add(at(mesh(boxG(.8,.26,.03),M.dark),-1,-.42,35.36));
+ // partitions: switchgear room | control room | battery room
+ wall(3.9,4.1,bz0+t,39.4,0,H,M.inwall);wall(3.9,4.1,40.6,bz1-t,0,H,M.inwall);wall(3.9,4.1,39.4,40.6,2.3,H,M.inwall);
+ wall(10,bx1-t,40.9,41.1,0,H,M.inwall);
+ wall(9.9,10.1,41.1,42.0,0,H,M.inwall);wall(9.9,10.1,43.0,bz1-t,0,H,M.inwall);wall(9.9,10.1,42.0,43.0,2.3,H,M.inwall);
+ [-7.5,-4,5.5,12].forEach(x=>{BLD.add(at(mesh(boxG(1.4,1.0,.04),M.win),x,1.9,bz0-.02));BLD.add(at(new THREE.Mesh(boxG(1.4,1.0,.02),M.winIn),x,1.9,bz0+t+.011));});
  const dl=mesh(boxG(.06,2.4,1.5),M.steelDark);dl.position.set(1.0,1.2,bz0-.75);BLD.add(dl);
  const sign=new THREE.Mesh(new THREE.PlaneGeometry(3.4,.75),new THREE.MeshStandardMaterial({map:labelTex([['ТС 110/20 kV',64],['Командна зграда',40]],512,112,'#24384a','#f2f2f2'),roughness:.6}));
  sign.position.set(1.8,3.4,bz0-.03);sign.rotation.y=Math.PI;BLD.add(sign);
  const ds=new THREE.Mesh(new THREE.PlaneGeometry(.5,.45),new THREE.MeshStandardMaterial({map:dangerTex(),roughness:.6}));ds.position.set(3.1,1.6,bz0-.03);ds.rotation.y=Math.PI;BLD.add(ds);
- [[-5,40],[2,40],[9,40]].forEach(([x,z])=>{BLD.add(at(new THREE.Mesh(boxG(1.2,.06,.3),M.lamp),x,H-.05,z));const L=new THREE.PointLight(0xfff1dc,.42,14);L.position.set(x,H-.4,z);BLD.add(L);});
+ const rl=(n,x,z)=>{const s=new THREE.Mesh(new THREE.PlaneGeometry(1.3,.26),texMat('rl_'+n,400,80,(c,w,h)=>{rr(c,0,0,w,h,'#24384a');txt(c,n,w/2,h/2,30,'#fff',700);}));s.position.set(x,2.65,z);return s;};
+ const s1=rl('20 kV ПОСТРОЈКА',-3,bz0+t+.012);BLD.add(s1);const s2=rl('КОМАНДНА САЛА',4.12,40);s2.rotation.y=Math.PI/2;BLD.add(s2);const s3=rl('БАТЕРИИ',10.12,42.5);s3.rotation.y=-Math.PI/2;s3.position.y=2.7;BLD.add(s3);
+ // floor cable trench in front of the cells (one cover lifted)
+ {const cm=cache('chkm',()=>{const m=texMat('chk',256,32,(c,w,h)=>{rr(c,0,0,w,h,'#8d9294');for(let i=0;i<w;i+=32){c.strokeStyle='#5e6365';c.lineWidth=2;c.beginPath();c.moveTo(i,0);c.lineTo(i,h);c.stroke();}});m.roughness=.95;m.metalness=0;m.color.setHex(0x8a8a8a);return m;});
+  BLD.add(at(new THREE.Mesh(boxG(3.1,.012,.6),cm),-7.65,.066,42.6));BLD.add(at(new THREE.Mesh(boxG(.9,.012,.6),cm),-.05,.066,42.6));
+  BLD.add(at(new THREE.Mesh(boxG(.9,.012,5.4),cm),-1,.066,39.6));}
+ [[-6,40],[0,40],[7,40],[11.9,43]].forEach(([x,z])=>{BLD.add(at(new THREE.Mesh(boxG(1.2,.06,.3),M.lamp),x,H-.05,z));const L=new THREE.PointLight(0xfff1dc,.5,13);L.position.set(x,H-.4,z);BLD.add(L);});
+ [-2,4,-6].forEach(x=>BLD.add(at(new THREE.Mesh(boxG(1.2,.06,.3),M.lamp),x,H-.05,37.5)));
  scene.add(BLD);
 })();
-place('swg',buildSWG(12),'Командна зграда',-3.5,43.9,0,'20 kV постројка (метално оклопени ќелии)',{pos:[-3.5,38.6],look:[-3.5,1.3,43.9]});
-place('relay',buildRelay(7),'Командна зграда',9,39.6,0,'Ормани за заштита и управување',{pos:[9,36.6],look:[9,1.3,39.6]});
+place('swg',buildSWG(),'Командна зграда',-4.4,43.9,0,'20 kV постројка (метално оклопени ќелии)',{pos:[-4.4,39.6],look:[-4.4,1.3,43.9]});
+place('swo',buildSWGOpen(),'Командна зграда',.8,43.9,0,'Ќелија 20 kV — отворен приказ',{pos:[2.9,41.3],look:[.8,1.1,43.6]});
+place('bus20',buildBus20(),'Командна зграда',0,0,0,'Собирници 20 kV',{pos:[2.7,43.0],look:[.6,1.9,44.3]});
+place('relay',buildRelay(),'Командна зграда',7.1,44.4,0,'Ормани за заштита и управување',{pos:[7.1,41.4],look:[7.1,1.2,44.4]});
+place('scada',buildSCADA(),'Командна зграда',8.2,37.4,0,'SCADA — работна станица',{pos:[8.2,39.9],look:[8.2,1.3,37]});
+place('scada',buildWall(),'Командна зграда',8.2,35.33,0,'Ѕиден приказ на еднополната шема',{pos:[8.2,40.2],look:[8.2,2.4,35.3]});
+place('charger',buildBoards(),'Командна зграда',13.38,37.8,Math.PI/2,'Исправувачи и AC/DC развод',{pos:[11.0,37.8],look:[13.4,1.2,37.8]});
+place('battery',buildBattery(),'Командна зграда',0,0,0,'Акумулаторска батерија 110 V DC',{pos:[11.4,42.3],look:[12.3,.8,44]});
+place('safety',buildSafety(),'Командна зграда',4.11,42.6,-Math.PI/2,'Заштитни средства',{pos:[6.3,42.6],look:[4.1,1.4,42.6]});
 
+ELS.filter(e=>e.type==='swo').forEach(e=>{e.state={cb:false,truckIn:false,earth:true};});
+/* ---------- 20 kV cables (buried ≈0.8 m), trench cross-section, outgoing feeders ---------- */
+M.pipe=std(0x3d4246,.6,.1);M.poleC=std(0xb3b0a8,.9,0);M.sand=std(0xd8c28e,1,0);M.soil=std(0x7a5a3c,1,0);
+const CD=-.8; // burial depth of the cable axis
+function buildCable(x0,dir,lanes,fz,xc){
+ // incomer cables: transformer 20 kV bushings -> riser pipes -> underground -> building foundation -> floor channel -> incomer cell
+ const g=new THREE.Group(),mat=M.cable.clone();
+ [-1.1,0,1.1].forEach((lx,k)=>{const x=x0+lx,zk=28.6+.15*k,xs=lanes[k],cx=xc+.22*(k-1);
+  const P=[[x,4.92,25.3],[x,5.19,25.8],[x,4.44,26.4],[x,2.2,26.75],[x,1.4,27.3],[x,1.06,28.0],[x,.98,28.15],[x,.3,28.15],[x,-.55,28.17],[x,CD,28.4],
+   [x+dir*.5,CD,zk],[xs-dir*.5,CD,zk],[xs,CD,zk+.5],[xs,CD,34.5],[xs,-.6,35.15],[xs,-.56,35.6],[xs,-.56,fz[k]-.5],
+   [xs-.4,-.56,fz[k]],[cx+.35,-.56,fz[k]],[cx,-.5,fz[k]+.15],[cx,-.25,42.83],[cx,.05,42.98],[cx,.2,43.35]].map(p=>new V3(...p));
+  g.add(tube(P,.032,mat,'Кабел L'+(k+1)+' — XHE 49-A 1×240 mm², 12/20 kV',360));
+  g.add(at(mesh(cylG(.06,.06,1.5,12),M.pipe,'Заштитни цевки (излез од земја)'),x,.25,28.15));
+ });
+ return {group:g,terms:{},mat};
+}
+function buildTermPole(){
+ // concrete terminal pole: cable riser, outdoor terminations, surge arresters, dead-end of the 20 kV overhead line (local: -z faces the substation)
+ const g=new THREE.Group(),terms={a:[]},W=M.cond;
+ g.add(at(mesh(cylG(.11,.19,12,14),M.poleC,'Бетонски столб'),0,6,0));
+ g.add(at(mesh(cylG(.08,.08,2.9,12),M.steelDark,'Заштитна цевка за кабелот'),0,1.15,-.3));
+ [3.6,5.0,6.4].forEach(y=>g.add(at(mesh(boxG(.2,.06,.16),M.steelDark,'Држачи за кабелот'),0,y,-.27)));
+ g.add(at(mesh(boxG(1.4,.08,.08),M.steel,'Носач на кабелските завршници'),0,7.8,-.3));
+ g.add(at(mesh(boxG(1.4,.08,.08),M.steel,'Носач на одводниците на пренапони'),0,8.75,-.3));
+ g.add(at(mesh(boxG(.1,1.1,.1),M.steel,'Носач на кабелските завршници'),0,8.3,-.24));
+ g.add(at(mesh(boxG(2.2,.1,.1),M.steel,'Конзола (траверза) на водот'),0,10.6,0));
+ g.add(at(mesh(boxG(.1,.55,.1),M.steel,'Конзола (траверза) на водот'),0,12.1,0));
+ g.add(at(mesh(boxG(.02,8.75,.02),M.copper,'Заземјувачки спроводник'),.13,4.4,-.19));
+ const ph=[[-.95,10.6],[0,12.33],[.95,10.6]];
+ [-1,0,1].forEach((o,k)=>{const x=.55*o;
+  g.add(at(mesh(insGeo(.5,.035,.075),M.sil,'Кабелски завршници (надворешни)'),x,7.88,-.3));
+  g.add(at(mesh(cylG(.02,.02,.1,8),M.alu,'Кабелски завршници (надворешни)'),x,8.43,-.3));
+  g.add(at(mesh(insGeo(.45,.04,.08),M.sil,'Одводници на пренапони 20 kV'),x,8.83,-.3));
+  g.add(at(mesh(cylG(.02,.02,.08,8),M.alu,'Одводници на пренапони 20 kV'),x,9.32,-.3));
+  const [lx,ly]=ph[k];
+  const s=mesh(insGeo(.45,.02,.08,.09,false),M.gIns,'Затезни изолатори');s.rotation.x=Math.PI/2;s.position.set(lx,ly,.06);g.add(s);
+  terms.a.push(new V3(lx,ly,.56));
+  g.add(tube([new V3(x,8.48,-.3),new V3(x,8.9,-.42),new V3(x,9.36,-.3)],.01,W,'Спојни спроводници',12));
+  g.add(tube([new V3(x,8.48,-.3),new V3(x*.9+lx*.1,ly-.9,-.05),new V3(lx,ly-.35,.4),new V3(lx,ly,.56)],.012,W,'Спојни спроводници',20));
+ });
+ return {group:g,terms};
+}
+function linePole(x,z,ry){
+ const g=new THREE.Group();
+ g.add(at(new THREE.Mesh(cylG(.11,.19,12,12),M.poleC),0,6,0));
+ g.add(at(new THREE.Mesh(boxG(2.2,.1,.1),M.steel),0,10.6,0));g.add(at(new THREE.Mesh(boxG(.1,.55,.1),M.steel),0,12.1,0));
+ const pts=[[-.95,10.65],[0,12.38],[.95,10.65]].map(([px,py])=>{g.add(at(new THREE.Mesh(insGeo(.32,.035,.075),M.porc),px,py,0));return new V3(px,py+.36,0);});
+ g.position.set(x,0,z);g.rotation.y=ry;g.traverse(o=>{if(o.isMesh)o.castShadow=true;});scene.add(g);g.updateMatrixWorld(true);
+ return pts.map(p=>g.localToWorld(p.clone()));
+}
+function overheadLine(start,px,drift){
+ // start: 3 dead-end points on the terminal pole; poles every 45 m towards the distribution grid
+ let prev=start,x=px,z=52.7;
+ for(let n=1;n<=5;n++){x+=drift;z+=45;const ry=Math.atan2(drift,45);const p=linePole(x,z,ry);
+  for(let k=0;k<3;k++)wire(span(prev[k],p[k],.75,16),.011);prev=p;}
+}
+function buildFeeder(cx,dest,mat){
+ const g=new THREE.Group();
+ [-1,0,1].forEach((o,k)=>{const x0=cx+.18*o;const P=[[x0,.25,43.6],[x0,-.3,43.75],[x0,CD,44.4],[x0,CD,46.4]];
+  if(dest.px!==undefined){const px=dest.px;P.push([px+.15*o,CD,50.6],[px+.04*o,CD,52.0],[px+.04*o,-.55,52.38],[px+.04*o,2.6,52.4],[px+.04*o,3.2,52.4],[px+.25*o,7.0,52.38],[px+.55*o,7.9,52.36]);}
+  else P.push([dest.x+.15*o,CD,50.6],[dest.x+.15*o,CD,64],[dest.x+.15*o,CD,80]);
+  g.add(tube(P.map(p=>new V3(...p)),.026,mat,'Кабел L'+(k+1)+' — XHE 49-A 1×150 mm², 12/20 kV',240));});
+ if(dest.px===undefined)return {group:g,terms:{},mat};
+ const tp=buildTermPole();tp.group.position.set(dest.px,0,52.7);g.add(tp.group);
+ return {group:g,terms:{a:tp.terms.a.map(v=>v.clone().add(new V3(dest.px,0,52.7)))},mat};
+}
+const PIT=[-4.6,28.15,-2.6,29.35];
+function pitTex(key,wm,lanes,ruler){return texMat(key,Math.round(wm*200),220,(c,w,h)=>{
+ const band=(y0,y1,col)=>rr(c,0,y0*200,w,(y1-y0)*200,col);
+ band(0,.1,'#8c8881');band(.1,.95,'#7a5a3c');band(.95,1.1,'#5e4330');
+ for(let i=0;i<900;i++){c.fillStyle=['#6b4e33','#86664a','#a8a49c'][i%3];c.fillRect(Math.random()*w,20+Math.random()*170,2,2);}
+ if(lanes){const u0=Math.min(...lanes)-.3,u1=Math.max(...lanes)+.3;
+  rr(c,u0*200,.65*200,(u1-u0)*200,.3*200,'#d8c28e');rr(c,u0*200,.6*200,(u1-u0)*200,.045*200,'#a9a49b','#777',1);
+  rr(c,(u0+.08)*200,.35*200,(u1-u0-.16)*200,4,'#f2c94c');
+  lanes.forEach(u=>circ(c,u*200,.8*200,6.4,'#1c1e21','#000',1));}
+ if(ruler){c.strokeStyle='#fff';c.lineWidth=2;c.beginPath();c.moveTo(10,0);c.lineTo(10,170);c.stroke();
+  [[0,'0'],[.4,'0,4 m'],[.8,'0,8 m']].forEach(([d,s])=>{c.beginPath();c.moveTo(4,d*200+1);c.lineTo(22,d*200+1);c.stroke();txt(c,s,26,d*200+(d?0:9),13,'#fff',700,'left');});}
+});}
+function buildPit(){
+ const g=new THREE.Group(),[x0,z0,x1,z1]=PIT,D=1.1,L=x1-x0,Wd=z1-z0,cy=-D/2;
+ const lanesU=[28.6,28.75,28.9];
+ const wallP=(w,mat,x,z,ry)=>{const m=new THREE.Mesh(new THREE.PlaneGeometry(w,D),mat);m.position.set(x,cy,z);m.rotation.y=ry;m.receiveShadow=true;m.userData.part='Слоеви во ровот: чакал, насип, песок, плочи, лента';g.add(m);};
+ wallP(L,pitTex('pitL',L,null,false),(x0+x1)/2,z0,0);
+ wallP(L,pitTex('pitL',L,null,false),(x0+x1)/2,z1,Math.PI);
+ wallP(Wd,pitTex('pitW',Wd,lanesU.map(z=>(z1-z)),false),x0,(z0+z1)/2,Math.PI/2);
+ wallP(Wd,pitTex('pitE',Wd,lanesU.map(z=>(z-z0)),true),x1,(z0+z1)/2,-Math.PI/2);
+ const bt=new THREE.Mesh(new THREE.PlaneGeometry(L,Wd),M.soil);bt.rotation.x=-Math.PI/2;bt.position.set((x0+x1)/2,-D,(z0+z1)/2);bt.userData.part='Дно на ровот';g.add(bt);
+ g.add(at(mesh(boxG(L,.24,.6),M.sand,'Постелка од ситен песок (под и над каблите)'),(x0+x1)/2,-D+.12,28.75));
+ for(let i=0;i<2;i++)g.add(at(mesh(boxG(.48,.04,.6),M.conc,'Заштитни плочи (бетонски / PVC)'),x0+.26+i*.5,-.62,28.75));
+ g.add(at(mesh(boxG(L*.45,.006,.14),texMat('tape',512,32,(c,w,h)=>{rr(c,0,0,w,h,'#f2c94c');for(let i=0;i<w;i+=128)txt(c,'ВНИМАНИЕ! ЕЛЕКТРИЧЕН КАБЕЛ',i+64,h/2,13,'#c62828',800);}),'Предупредувачка лента'),x0+L*.25,-.35,28.75));
+ const tape=texMat('btape',64,8,(c,w,h)=>{for(let i=0;i<w;i+=16){rr(c,i,0,8,h,'#c62828');rr(c,i+8,0,8,h,'#f4f4f4');}});
+ [[x0-.3,z0-.3],[x1+.3,z0-.3],[x1+.3,z1+.3],[x0-.3,z1+.3]].forEach(([x,z])=>g.add(at(mesh(boxG(.05,1.0,.05),M.steelDark,'Заштитна ограда околу ископот'),x,.5,z)));
+ [[L+.6,.03,(x0+x1)/2,z0-.3],[L+.6,.03,(x0+x1)/2,z1+.3]].forEach(([w,d,x,z])=>g.add(at(mesh(boxG(w,.06,d),tape,'Заштитна ограда околу ископот'),x,.92,z)));
+ [x0-.3,x1+.3].forEach(x=>g.add(at(mesh(boxG(.03,.06,Wd+.6),tape,'Заштитна ограда околу ископот'),x,.92,(z0+z1)/2)));
+ return {group:g,terms:{}};
+}
+// incomer cables
+[['ТР поле Т1',-8,1,[-1.35,-1.2,-1.05],[42.44,42.51,42.58],-5.6,'Т1',[2.2,30.6],[-4.5,0,28.4]],
+ ['ТР поле Т2',8,-1,[-.65,-.8,-.95],[42.66,42.73,42.8],-2.4,'Т2',[-4.2,30.6],[4.5,0,28.4]]].forEach(([bay,x0,dir,lanes,fz,xc,t,vp,vl])=>{
+ const b=buildCable(x0,dir,lanes,fz,xc);
+ const el=place('cbl',b,bay,0,0,0,'Кабелска врска '+t+' → ќелија „Довод '+t+'“',{pos:vp,look:vl});
+ el.mat=b.mat;el.hl=false;el.t=t;
+ const tr=BAYS[bay].els.find(e=>e.type==='tr');
+ el.helpers=[new THREE.Box3Helper(new THREE.Box3().setFromObject(tr.group),0xff8a1e),new THREE.Box3Helper(new THREE.Box3(new V3(xc-.41,0,43.08),new V3(xc+.41,2.33,44.72)),0xff8a1e)];
+ el.helpers.forEach(h=>{h.visible=false;scene.add(h);});
+});
+// outgoing 20 kV feeders
+[['Извод 1',-8.8,{px:-14},-11],['Извод 2',-8.0,{px:-8},-2],['Извод 3',-7.2,{x:-4}],['Извод 4',-.8,{px:2},10],['Извод 5',0,{x:6}]].forEach(([n,cx,dest,drift])=>{
+ const oh=dest.px!==undefined,mat=M.cable.clone(),b=buildFeeder(cx,dest,mat),X=oh?dest.px:dest.x;
+ const el=place('feeder',b,'Изводи 20 kV',0,0,0,n+(oh?' — кабел и надземен вод':' — кабелски вод'),{pos:[X+1.6,46.7],look:oh?[X,6,52.7]:[X,-.5,51]});
+ el.mat=mat;el.hl=false;el.oh=oh;
+ el.helpers=[new THREE.Box3Helper(new THREE.Box3(new V3(cx-.41,0,43.08),new V3(cx+.41,2.33,44.72)),0xff8a1e)];el.helpers.forEach(h=>{h.visible=false;scene.add(h);});
+ if(oh)overheadLine(el.terms.a,dest.px,drift);
+});
+place('pit',buildPit(),'Општо',0,0,0,'Пресек низ кабелскиот ров (20 kV)',{pos:[-3.6,31.0],look:[-3.6,-.7,28.75]});
+function setCableHL(el,on){
+ el.hl=on;const m=el.mat;m.emissive.setHex(on?0xff7a00:0);m.emissiveIntensity=on?1:0;m.depthTest=!on;m.transparent=on;m.opacity=on?.92:1;m.needsUpdate=true;
+ const ro=o=>{if(o.isMesh&&o.material===m)o.renderOrder=on?10:0;};el.group.traverse(ro);if(iObj&&iEl===el)iObj.traverse(ro);
+ el.helpers.forEach(h=>h.visible=on);dirty=true;
+}
+
+
+
+/* ---------- live SCADA drawing ---------- */
+function energy(){
+ const lineFeeds=n=>{const b=BAYS[n];const ld=b.els.find(e=>e.type==='dse');const ok=b.cb.state.closed&&ld&&!ld.state.open&&!ld.state.earth;const d=b.els.filter(e=>e.type==='bds');
+  return [ok&&!d.find(e=>e.sys===1).state.open,ok&&!d.find(e=>e.sys===2).state.open];};
+ let e1=false,e2=false;['ДВ поле 1','ДВ поле 2'].forEach(n=>{const [a,b]=lineFeeds(n);e1=e1||a;e2=e2||b;});
+ if(couplerOn()){const e=e1||e2;e1=e2=e;}
+ const trOn=n=>{const b=BAYS[n];const d=b.els.filter(e=>e.type==='bds');return b.cb.state.closed&&((!d.find(e=>e.sys===1).state.open&&e1)||(!d.find(e=>e.sys===2).state.open&&e2));};
+ return {e1,e2,t1:trOn('ТР поле Т1'),t2:trOn('ТР поле Т2')};
+}
+function drawSCADA(){
+ const g=scC.getContext('2d'),W=1024,H=576,E=energy();
+ const HV='#f2c94c',MV='#6fcf97',OFFC='#56616b',FG='#cfd8dc';
+ g.fillStyle='#0b1620';g.fillRect(0,0,W,H);
+ txt(g,'ТС 110/20 kV — еднополна шема',24,26,20,'#e6edf1',700,'left');txt(g,'SCADA · ФТН Битола (прототип за настава)',W-24,26,13,'#7f909b',500,'right');
+ const Y1=96,Y2=132;
+ g.lineWidth=6;g.strokeStyle=E.e1?HV:OFFC;g.beginPath();g.moveTo(80,Y1);g.lineTo(980,Y1);g.stroke();
+ g.strokeStyle=E.e2?HV:OFFC;g.beginPath();g.moveTo(80,Y2);g.lineTo(980,Y2);g.stroke();
+ txt(g,'СС1',44,Y1,15,E.e1?HV:OFFC,700);txt(g,'СС2',44,Y2,15,E.e2?HV:OFFC,700);txt(g,'110 kV',44,Y2+22,11,'#7f909b',500);
+ const ln=(x1,y1,x2,y2,c,w)=>{g.strokeStyle=c||FG;g.lineWidth=w||3;g.beginPath();g.moveTo(x1,y1);g.lineTo(x2,y2);g.stroke();};
+ const dot=(x,y)=>circ(g,x,y,4.5,FG);
+ const sw=(x,y1,y2,closed)=>{const a=y1+(y2-y1)*.3,b=y2-(y2-y1)*.3;ln(x,y1,x,a);ln(x,b,x,y2);ln(x-7,a,x+7,a);if(closed)ln(x,b,x,a,'#e5533d',4);else ln(x,b,x-(b-a)*.7,a+3,'#3fbf7f',4);};
+ const cbx=(x,y,closed)=>{const s=24;if(closed){g.fillStyle='#e5533d';g.fillRect(x-s/2,y-s/2,s,s);}else{g.fillStyle='#0b1620';g.fillRect(x-s/2,y-s/2,s,s);g.strokeStyle='#3fbf7f';g.lineWidth=3;g.strokeRect(x-s/2,y-s/2,s,s);}};
+ const bds=(b,sys)=>b.els.find(e=>e.type==='bds'&&e.sys===sys);
+ const twoBus=(x,b)=>{const d1=bds(b,1),d2=bds(b,2);dot(x-16,Y1);dot(x+16,Y2);ln(x-16,Y1,x-16,170);sw(x-16,170,210,!d1.state.open);ln(x-16,210,x-16,228);
+  ln(x+16,Y2,x+16,170);sw(x+16,170,210,!d2.state.open);ln(x+16,210,x+16,228);ln(x-16,228,x+16,228);ln(x,228,x,256);cbx(x,268,b.cb.state.closed);ln(x,280,x,300);};
+ const COL={'ДВ поле 1':140,'ДВ поле 2':260,'Мерно поле СС1':380,'Спојно поле':500,'ТР поле Т1':630,'ТР поле Т2':780,'Мерно поле СС2':920};
+ ['ДВ поле 1','ДВ поле 2'].forEach((n,i)=>{const x=COL[n],b=BAYS[n],ld=b.els.find(e=>e.type==='dse');twoBus(x,b);sw(x,300,340,!ld.state.open);ln(x,340,x,400);
+  ln(x,372,x+12,372);if(ld.state.earth)ln(x+12,372,x+30,372,'#e5533d',4);else ln(x+12,372,x+28,358,'#3fbf7f',4);ln(x+32,366,x+32,378);ln(x+36,369,x+36,375);
+  g.fillStyle=FG;g.beginPath();g.moveTo(x-8,400);g.lineTo(x+8,400);g.lineTo(x,414);g.closePath();g.fill();txt(g,'ДВ '+(i+1),x,432,14,FG,700);});
+ [['Мерно поле СС1',1],['Мерно поле СС2',2]].forEach(([n,s])=>{const x=COL[n],d=BAYS[n].els.find(e=>e.type==='bds'),Y=s===1?Y1:Y2;dot(x,Y);ln(x,Y,x,170);sw(x,170,210,!d.state.open);ln(x,210,x,240);circ(g,x,252,11,null,FG,3);circ(g,x,266,11,null,FG,3);txt(g,'НМТ СС'+s,x,296,12,FG,600);});
+ {const x=COL['Спојно поле'],b=BAYS['Спојно поле'];const d1=bds(b,1),d2=bds(b,2);dot(x-34,Y1);dot(x+34,Y2);ln(x-34,Y1,x-34,170);sw(x-34,170,210,!d1.state.open);ln(x-34,210,x-34,236);
+  ln(x+34,Y2,x+34,170);sw(x+34,170,210,!d2.state.open);ln(x+34,210,x+34,236);ln(x-34,236,x-12,236);ln(x+12,236,x+34,236);cbx(x,236,b.cb.state.closed);txt(g,'Спојно',x,268,12,FG,600);}
+ const M1=470;
+ const MVon=E.t1||E.t2;[['ТР поле Т1','Т1',E.t1,560,700],['ТР поле Т2','Т2',E.t2,720,860]].forEach(([n,t,trOn,a,bx])=>{const on=MVon;const x=COL[n];twoBus(x,BAYS[n]);ln(x,300,x,316);circ(g,x,332,16,null,trOn?HV:OFFC,3);circ(g,x,354,16,null,trOn?MV:OFFC,3);txt(g,t,x+34,343,14,FG,700);
+  ln(x,370,x,M1,trOn?MV:OFFC);g.lineWidth=6;g.strokeStyle=on?MV:OFFC;g.beginPath();g.moveTo(a,M1);g.lineTo(bx,M1);g.stroke();
+  [a+20,a+50,bx-20].forEach(fx=>{if(Math.abs(fx-x)<20)return;ln(fx,M1,fx,520,on?MV:OFFC);g.fillStyle=on?MV:OFFC;g.beginPath();g.moveTo(fx-6,520);g.lineTo(fx+6,520);g.lineTo(fx,531);g.closePath();g.fill();});});
+ cbx(710,M1,true);txt(g,'20 kV  секција I',600,M1-18,12,'#9fb0bd',600);txt(g,'секција II',820,M1-18,12,'#9fb0bd',600);
+ rr(g,24,H-46,340,30,'#111c25');cbx(44,H-31,true);txt(g,'вклучен / затворен',62,H-31,12,FG,500,'left');cbx(200,H-31,false);txt(g,'исклучен / отворен',218,H-31,12,FG,500,'left');
+ scT.needsUpdate=true;
+ // events
+ const e=evC.getContext('2d');e.fillStyle='#0b1620';e.fillRect(0,0,512,320);txt(e,'Листа на настани',16,22,17,'#e6edf1',700,'left');
+ EVT.forEach(([ts,t,w],i)=>{txt(e,ts,16,52+i*24,12,'#7f909b',500,'left');txt(e,t.length>52?t.slice(0,51)+'…':t,86,52+i*24,12.5,w?'#f2b632':'#cfd8dc',500,'left');});
+ evT.needsUpdate=true;
+ // measurements
+ const m=msC.getContext('2d');m.fillStyle='#0b1620';m.fillRect(0,0,512,320);txt(m,'Мерења',16,22,17,'#e6edf1',700,'left');
+ const fl=n=>{const b=BAYS[n];const ld=b.els.find(x=>x.type==='dse');return b.cb.state.closed&&!ld.state.open&&!ld.state.earth&&b.els.some(x=>x.type==='bds'&&!x.state.open&&(x.sys===1?E.e1:E.e2));};
+ const rows=[['U  СС1',E.e1?'112,4 kV':'0,0 kV'],['U  СС2',E.e2?'112,3 kV':'0,0 kV'],['I  ДВ 1',fl('ДВ поле 1')?'184 A':'0 A'],['I  ДВ 2',fl('ДВ поле 2')?'132 A':'0 A'],['P  Т1',E.t1?'16,2 MW':'0,0 MW'],['P  Т2',E.t2?'12,8 MW':'0,0 MW'],['U  20 kV',(E.t1||E.t2)?'20,8 kV':'0,0 kV']];
+ rows.forEach(([a,b],i)=>{m.fillStyle=i%2?'#0f1d29':'#0b1620';m.fillRect(12,40+i*38,488,34);txt(m,a,28,57+i*38,15,'#9fb0bd',600,'left');txt(m,b,488,57+i*38,17,b.startsWith('0')?'#56616b':'#6fcf97',700,'right');});
+ msT.needsUpdate=true;dirty=true;
+}
 /* ---------- descriptive content ---------- */
 const INFO={
- cb:{en:'SF6 circuit breaker (live tank)',p:['Прекинувачот е единствениот апарат во полето што може безбедно да вклучува и исклучува работни струи и струи на куса врска. При исклучување, лакот меѓу контактите се гасне во гасот SF6 (сулфур хексафлуорид), кој има многу добри изолациони и гасилни својства.','Ова е изведба „live tank“: гасилната комора е на висок потенцијал, поставена на потпорен изолатор. Трите пола се на заедничка рамка и ги задвижува пружински погонски механизам. Командата за исклучување ја дава релејната заштита при дефект, или операторот при манипулација.'],
+ cb:{en:'SF6 circuit breaker (live tank)',p:['Прекинувачот е единствениот апарат во полето што може безбедно да вклучува и исклучува работни струи и струи на куса врска. При исклучување, лакот меѓу контактите се гасне во гасот SF6 (сулфур хексафлуорид), кој има многу добри изолациони и гасилни својства.','Ова е изведба „live tank“: гасилната комора е на висок потенцијал, поставена на потпорен изолатор. Трите пола се на заедничка рамка и ги задвижува пружински погонски механизам преку погонски шипки во потпорните изолатори. Мониторот на густина на SF6 алармира и го блокира прекинувачот ако притисокот на гасот опадне.'],
   d:[['Номинален напон','123 kV'],['Номинална струја','3150 A'],['Номинална прекинувачка струја на КВ','31,5 kA'],['Ударен издржлив напон (BIL)','550 kV'],['Работен циклус','O – 0,3 s – CO – 3 min – CO'],['Медиум за гаснење','SF6'],['Погон','пружински']]},
- ds:{en:'Busbar disconnector (centre-break)',p:['Раставувачот служи за видливо одвојување на дел од постројката, за да може безбедно да се работи на него. Тој не може да прекинува струја на оптоварување — затоа смее да се манипулира само кога прекинувачот во полето е исклучен.','Ова е двостолбен раставувач со хоризонтално (централно) отворање: двата потпорни изолатори ротираат за 90° во спротивни насоки, а контактните ножеви се одвојуваат во средината. Собирничкиот раставувач го поврзува полето со собирниците.'],
-  d:[['Номинален напон','123 kV'],['Номинална струја','1250 A'],['Издржлива струја на кратко траење','31,5 kA / 1 s'],['Погон','моторен (и рачен)']],
-  note:'Вообичаен редослед при исклучување на ДВ поле: прекинувач → линиски раставувач → собирнички раставувач. При вклучување — обратно.'},
- dse:{en:'Line disconnector with earthing switch',p:['Линискиот раставувач го одвојува далекуводот од полето. На него е вграден заземјувач (ножеви за заземјување): по исклучувањето и проверката за отсуство на напон, со него далекуводот се поврзува со заземјувачот на постројката, за да се заштити екипата што работи на водот.','Раставувачот и заземјувачот се меѓусебно блокирани: заземјувачот може да се вклучи само кога раставувачот е отворен, а раставувачот може да се затвори само кога заземјувачот е исклучен.'],
+ bds:{en:'Pantograph busbar disconnector',p:['Пантограф (ножичен) раставувач се поставува директно под собирницата. При вклучување, ножичниот механизам се исправа нагоре и го зафаќа фиксниот контакт обесен на собирницата; при исклучување се преклопува надолу и создава видлив изолационен простор. Не може да прекинува струја на оптоварување.','Секое поле има по еден собирнички раставувач кон СС1 и кон СС2, па може да се приклучи на едните или на другите собирници. Ако спојното поле е вклучено, полето може да се префрли под оптоварување: прво се затвора раставувачот кон другите собирници, па се отвора првиот.'],
+  d:[['Номинален напон','123 kV'],['Номинална струја','1600 A'],['Издржлива струја на кратко траење','31,5 kA / 1 s'],['Погон','моторен (и рачен)']],
+  note:'Обиди се: префрли го ДВ поле 1 од СС1 на СС2 — затвори СС2, па отвори СС1. Потоа исклучи го спојното поле и обиди се да се вратиш назад.'},
+ dse:{en:'Line disconnector with earthing switch',p:['Линискиот раставувач го одвојува далекуводот од полето. На него е вграден заземјувач (ножеви за заземјување): по исклучувањето и проверката за отсуство на напон, со него далекуводот се поврзува со заземјувачот на постројката, за да се заштити екипата што работи на водот.','Ова е двостолбен раставувач со хоризонтално (централно) отворање: двата потпорни изолатори ротираат за 90° во спротивни насоки, а контактните ножеви се одвојуваат во средината. Раставувачот и заземјувачот се меѓусебно блокирани.'],
   d:[['Номинален напон','123 kV'],['Номинална струја','1250 A'],['Издржлива струја на кратко траење','31,5 kA / 1 s'],['Заземјувач','со механичка и електрична блокада']],
-  note:'Обиди се: исклучи го прекинувачот во полето, отвори го раставувачот, па вклучи го заземјувачот. Обратниот редослед е блокиран.'},
- ct:{en:'Current transformer',p:['Струјниот мерен трансформатор ја намалува примарната струја на стандардна секундарна вредност (1 A или 5 A) за мерење, обрачун на енергија и релејна заштита. Има повеќе секундарни јадра — мерно (на пр. класа 0,2S) и заштитни (на пр. 5P20).','Ова е изведба со јадра во главата: примарниот спроводник минува низ главата на врвот, а секундарните намотки се изведени низ изолаторот до разводната кутија во подножјето. Изолацијата е маслено-хартиена.'],
+  note:'Вообичаен редослед при исклучување на ДВ поле: прекинувач → линиски раставувач → собирнички раставувач → (проверка за отсуство на напон) → заземјувач. При вклучување — обратно.'},
+ ct:{en:'Current transformer',p:['Струјниот мерен трансформатор ја намалува примарната струја на стандардна секундарна вредност (1 A или 5 A) за мерење, обрачун на енергија и релејна заштита. Има повеќе секундарни јадра — мерно (на пр. класа 0,2S) и заштитни (на пр. 5P20).','Ова е изведба со јадра во главата: примарниот спроводник минува низ главата на врвот, а секундарните намотки се изведени низ изолаторот до разводната кутија во подножјето. Изолацијата е маслено-хартиена, а металниот мев на врвот ги компензира промените на волуменот на маслото.'],
   d:[['Номинален напон','123 kV'],['Преносен однос (пример)','2×400 / 1 / 1 / 1 A'],['Јадра','0,2S · 5P20 · 5P20'],['Термичка струја','31,5 kA / 1 s']],
   note:'Секундарното коло на СМТ никогаш не смее да остане отворено додека тече примарна струја — се индуцираат опасно високи напони.'},
  cvt:{en:'Capacitive voltage transformer (CVT)',p:['Капацитивниот напонски мерен трансформатор се состои од капацитивен делител (кондензаторски столб) и електромагнетна единица во подножјето, која го сведува напонот на стандардна секундарна вредност.','Се поставува на влезот на далекуводот за мерење, заштита (на пр. дистантна заштита) и синхронизација. Преку кондензаторскиот столб може да се приклучи и високофреквентна (ВФ) телекомуникациска врска по проводниците на далекуводот.'],
   d:[['Примарен напон','110/√3 kV'],['Секундарни напони','100/√3 V · 100/3 V'],['Класа на точност','0,5 · 3P']]},
- vt:{en:'Inductive voltage transformer',p:['Индуктивниот напонски мерен трансформатор работи како обичен трансформатор со железно јадро. Во мерното поле, три еднополни НМТ го мерат напонот на собирниците — за мерење, синхронизација и напонски заштити.'],
+ vt:{en:'Inductive voltage transformer',p:['Индуктивниот напонски мерен трансформатор работи како обичен трансформатор со железно јадро. Секој систем собирници има свое мерно поле со три еднополни НМТ, кои го мерат напонот на собирниците — за мерење, синхронизација и напонски заштити.'],
   d:[['Примарен напон','110/√3 kV'],['Секундарни напони','100/√3 V · 100/3 V'],['Класа на точност','0,2 · 3P']],note:'Секундарното коло на НМТ не смее да се кратко споји.'},
  sa:{en:'Surge arrester (ZnO)',p:['Одводникот на пренапони ја штити опремата — пред сè трансформаторот и влезот на далекуводот — од атмосферски и комутациски пренапони. Металоксидните (ZnO) варистори имаат силно нелинеарна карактеристика: при работен напон пропуштаат занемарливо мала струја, а при пренапон стануваат спроводни и енергијата ја одведуваат во заземјувањето.','Се поставува што поблиску до штитениот објект. Бројачот на прорадувања во подножјето ги регистрира празнењата.'],
   d:[['Номинален напон Ur (тип.)','96 – 108 kV'],['Номинална струја на празнење','10 kA'],['Куќиште','силиконска гума'],['Поврзување','фаза – земја']]},
- bus:{en:'Busbars',p:['Собирниците се заедничкиот јазол на кој се приклучуваат сите полиња. Овде се изведени како алуминиумски цевки на потпорни изолатори, на висина од околу 8,5 m.','Во оваа поедноставена постројка има еден систем собирници. Поголемите 110 kV постројки најчесто имаат двоен систем собирници со спојно поле, што овозможува префрлање на полињата без прекин на напојувањето.'],
-  d:[['Номинален напон','110 kV (Um = 123 kV)'],['Изведба','AlMgSi цевка на потпорни изолатори'],['Растојание меѓу фазите','≈ 2,2 m']]},
- tr:{en:'Power transformer 110/20 kV',p:['Енергетскиот трансформатор го трансформира напонот од 110 kV на 20 kV за дистрибутивната мрежа. Активниот дел (јадро и намотки) е потопен во трансформаторско масло, кое служи за изолација и ладење.','Напонот се регулира под оптоварување со регулациона склопка (OLTC) на 110 kV страна. Конзерваторот ги прифаќа промените на волуменот на маслото со температурата; Бухолц-релето реагира на гасови и нагли протоци на масло при внатрешни дефекти. Ладењето е со радијатори — природно (ONAN) или со вентилатори (ONAF).','Под трансформаторот има јама за собирање масло, а меѓу двата трансформатори — противпожарен ѕид.'],
+ bus:{en:'Double busbar system',p:['Собирниците се заедничкиот јазол на кој се приклучуваат сите полиња. Оваа постројка има двоен систем собирници — СС1 и СС2 — изведени како алуминиумски цевки на потпорни изолатори, на висина од околу 8,5 m. Дилатациските спојови ја прифаќаат топлинската должинска дилатација на цевките.','Двата системи се поврзуваат преку спојното поле. Со двоен систем собирници постројката може да се подели на два дела (на пр. при ремонт на едните собирници), а полињата се префрлаат од едните на другите без прекин на напојувањето.'],
+  d:[['Номинален напон','110 kV (Um = 123 kV)'],['Изведба','AlMgSi цевка на потпорни изолатори'],['Растојание меѓу фазите','≈ 2,2 m'],['Висина','≈ 8,5 m']]},
+ tr:{en:'Power transformer 110/20 kV',p:['Енергетскиот трансформатор го трансформира напонот од 110 kV на 20 kV за дистрибутивната мрежа. Активниот дел (јадро и намотки) е потопен во трансформаторско масло, кое служи за изолација и ладење.','Напонот се регулира под оптоварување со регулациона склопка (OLTC) на 110 kV страна. Конзерваторот ги прифаќа промените на волуменот на маслото со температурата; Бухолц-релето реагира на гасови и нагли протоци на масло при внатрешни дефекти, а вентилот за растоварување на притисок го штити казанот од распукување. Ладењето е со радијатори — природно (ONAN) или со вентилатори (ONAF).','Под трансформаторот има јама за собирање масло, а меѓу двата трансформатори — противпожарен ѕид.'],
   d:[['Номинална моќност (пример)','31,5 MVA'],['Преносен однос','110 ± 10×1,5 % / 21 kV'],['Група на спрега (пример)','YNd5'],['Напон на куса врска','uk ≈ 11 %'],['Ладење','ONAN / ONAF']]},
- gantry:{en:'Line entrance gantry',p:['На влезниот портал завршуваат проводниците на далекуводот, прицврстени со затезни изолаторски синџири. Од порталот, преку спуштачи, проводниците се поврзуваат со опремата во полето.','На врвовите на столбовите има громобрански шилци, кои заедно со громобранските столбови ја штитат постројката од директен удар на гром.'],d:[['Висина на траверзата','≈ 12 m'],['Изолација','стаклени капести изолатори']]},
+ gantry:{en:'Line entrance gantry',p:['На влезниот портал завршуваат проводниците на далекуводот, прицврстени со затезни изолаторски синџири. Од порталот, преку спуштачи, проводниците се поврзуваат со опремата во полето.','На врвовите на решеткастите столбови има громобрански шилци; од нив заштитното јаже продолжува кон далекуводот. Заедно со громобранските столбови тие ја штитат постројката од директен удар на гром.'],d:[['Висина на траверзата','≈ 12 m'],['Изолација','стаклени капести изолатори']]},
  mast:{en:'Lightning mast',p:['Громобранските столбови, заедно со шилците на порталите, формираат зона на заштита на опремата од директни удари на гром. Зоната се пресметува, на пример, со методот на тркалачка сфера. Секој громобран е поврзан со заземјувачката мрежа на постројката.'],d:[['Висина','≈ 25 m']]},
  fw:{en:'Fire wall',p:['Армирано-бетонски ѕид меѓу двата трансформатори, кој спречува пожар на едниот трансформатор да се пренесе на другиот. Под секој трансформатор има јама за собирање масло, исполнета со чакал.'],d:[]},
- swg:{en:'Indoor MV switchgear 20 kV',p:['Страната 20 kV е изведена како внатрешна постројка со метално оклопени ќелии. Секоја ќелија има посебни оддели: прекинувачки оддел со вакуумски прекинувач на извлеклива количка, оддел за собирници, кабелски оддел со струјни мерни трансформатори и заземјувач, и нисконапонски оддел со релејна заштита.','Типови ќелии: доводни (од трансформаторите), изводни (кон 20 kV водовите), мерна, спојна и ќелија за трансформаторот за сопствена потрошувачка.'],
-  d:[['Номинален напон','24 kV'],['Струја на собирниците','1250 A'],['Издржлива струја (пример)','16 kA / 3 s'],['Прекинувачи','вакуумски']]},
- relay:{en:'Protection & control panels',p:['Во командната зграда се орманите за заштита, управување и мерење. Нумеричките релеи ги штитат полињата: дистантна заштита за далекуводите, диференцијална заштита за трансформаторите, собирничка заштита.','Уредите за управување на ниво на поле и станичниот компјутер комуницираат со диспечерскиот центар (SCADA), на пример според IEC 61850.'],d:[]},
+ swg:{en:'Indoor MV switchgear 20 kV (metal-clad)',p:['Страната 20 kV е изведена како внатрешна постројка со метално оклопени ќелии, распоредени во две секции на собирници: секцијата I ја напојува Т1, а секцијата II — Т2. Секциите се поврзуваат преку спојна и подизна ќелија.','Типови ќелии: доводни (од трансформаторите), изводни (кон 20 kV кабелските водови), мерни (напонски мерни трансформатори на секциите), спојна, подизна и ќелија за трансформаторот за сопствена потрошувачка. На вратите на секоја ќелија има мнемоничка шема, нумеричко реле, прозорче за положбата на количката и показни ламби за присуство на напон.'],
+  d:[['Номинален напон','24 kV'],['Струја на собирниците','1250 A'],['Издржлива струја (пример)','16 kA / 3 s'],['Прекинувачи','вакуумски, на извлеклива количка']],note:'Последната ќелија во редот е прикажана отворена — кликни на неа за да ја видиш внатрешноста.'},
+ swo:{en:'MV cell — open view',p:['Оваа изводна ќелија е прикажана со отворена врата и проѕирен страничен ѕид, за да се види внатрешноста. Ќелијата е поделена на одделни метални оддели: нисконапонски оддел (горе напред), оддел за собирници (горе позади), прекинувачки оддел (во средина напред) и кабелски оддел (долу позади) со струјните мерни трансформатори, кабелските завршници и заземјувачот.','Вакуумскиот прекинувач е на извлеклива количка. Во работна положба, тулипан-контактите на количката се приклучени на контактните гнезда; кога количката се извлекува, металните ролетни автоматски ги покриваат гнездата под напон. Сега количката е извадена на сервисна количка, а заземјувачот на кабелот е вклучен — состојба за одржување.'],
+  d:[['Номинален напон','24 kV'],['Номинална струја на изводот','630 A'],['Прекинувач','вакуумски, на извлеклива количка'],['Струјни МТ','епоксидни (лиени во смола)']],
+  note:'Блокади во ќелијата: количката се придвижува само со исклучен прекинувач; не може да се внесе во работна положба ако заземјувачот е вклучен; заземјувачот се вклучува само кога количката е извлечена. Обиди се да ја пуштиш ќелијата во погон.'},
+ bus20:{en:'20 kV busbars',p:['Собирниците 20 kV се плоснати бакарни шини во горниот заден оддел на ќелиите и минуваат низ сите ќелии од редот, на епоксидни потпорни изолатори. Се гледаат низ проѕирниот страничен ѕид на отворената ќелија, заедно со спојните шини кон горните контактни гнезда.'],d:[['Материјал','бакар (Cu), плоснати шини'],['Номинална струја','1250 A'],['Издржлива струја (пример)','16 kA / 3 s']]},
+ scada:{en:'SCADA operator workstation',p:['Од работната станица операторот ја следи и управува постројката: еднополната шема ги прикажува состојбите на прекинувачите и раставувачите и кои собирници се под напон, листата на настани ги бележи сите манипулации и аларми, а мерењата ги покажуваат напоните, струите и моќностите.','Шемата е поврзана со оваа прошетка: секоја манипулација или блокада што ќе ја направиш на опремата веднаш се појавува на мониторите и на ѕидниот приказ.'],d:[]},
+ battery:{en:'Station battery 110 V DC',p:['Акумулаторската батерија е најсигурниот извор на напојување во постројката. Од неа се напојуваат релејната заштита, управувањето, сигнализацијата и погонските механизми на прекинувачите — и тогаш кога ќе снема наизменичен напон. Батеријата има 54 оловни ќелии од по 2 V, кои постојано се одржуваат полни преку исправувачите.','Просторијата за батерии мора да биде проветрувана, бидејќи при полнење може да се ослободува водород.'],d:[['Номинален напон','110 V DC'],['Број на ќелии','54 × 2 V'],['Капацитет (пример)','200 Ah'],['Тип','оловна, VRLA']]},
+ charger:{en:'Rectifiers & AC/DC distribution',p:['Двата исправувачи (полначи) ја полнат батеријата и го напојуваат DC разводот 110 V; вториот е резерва. AC разводот 0,4 kV се напојува од трансформаторите за сопствена потрошувачка и ги напојува осветлувањето, греењето, вентилацијата, моторните погони и исправувачите.'],d:[['DC напон','110 V'],['AC напон','400 / 230 V'],['Напојување','ТСП 20 / 0,4 kV']]},
+ cbl:{en:'20 kV cable connection (transformer → switchgear)',p:['Страната 20 kV на енергетскиот трансформатор е поврзана со доводната ќелија во 20 kV постројката преку едножилни кабли со изолација од вмрежен полиетилен (XLPE). Од кабелските завршници на 20 kV проводните изолатори, каблите се спуштаат по трансформаторот и низ заштитни цевки влегуваат во земја.','Под земја каблите се положени на длабочина од околу 0,8 m, во постелка од песок и под заштитни плочи. Минуваат под патот и низ кабелски премин во темелот влегуваат во подниот кабелски канал на командната зграда, а оттаму од долу — во кабелскиот оддел на доводната ќелија („Довод Т1“ или „Довод Т2“), каде се приклучуваат на кабелските завршници.'],
+  d:[['Кабел (пример)','XHE 49-A 1×240 mm², 12/20 kV'],['Длабочина на полагање','≈ 0,8 m'],['Номинална струја на доводот','≈ 870 A (31,5 MVA, 21 kV)'],['Должина на трасата','≈ 30 m']],
+  note:'Истакни ја трасата за да ги видиш каблите низ земјата. Поради големата струја, во пракса се полагаат по 2–3 паралелни кабли по фаза; овде е прикажан по еден кабел по фаза.'},
+ feeder:{en:'20 kV outgoing feeder',p:['Изводите 20 kV ја пренесуваат енергијата од трансформаторската станица кон дистрибутивната мрежа. Од изводната ќелија, каблите излегуваат од долу, минуваат под темелот на зградата и, положени во земја на околу 0,8 m, ја напуштаат постројката.','Кај надземните изводи, кабелот се крева по бетонскиот столб во заштитна цевка до кабелските завршници. Одводниците на пренапони ги штитат кабелот и завршниците од атмосферските пренапони што доаѓаат по надземниот вод. Оттаму 20 kV надземниот вод продолжува на бетонски столбови кон трафостаниците 20/0,4 kV. Кабелските изводи продолжуваат под земја, обично кон градски трафостаници.'],
+  d:[['Кабел (пример)','XHE 49-A 3 × 1×150 mm², 12/20 kV'],['Надземен вод (пример)','Ал/Че 3 × 50/8 mm²'],['Ќелија','изводна, 630 A, вакуумски прекинувач']],
+  note:'Изводите 1, 2 и 4 преминуваат во надземни водови, а изводите 3 и 5 се кабелски. Истакни ја трасата за да ја видиш низ земјата.'},
+ pit:{en:'Cable trench cross-section',p:['Надвор од зградата, 20 kV каблите се положени во земја, на длабочина од околу 0,8 m. Овој отворен пресек ги покажува слоевите: каблите лежат во постелка од ситен песок (околу 10 cm под и над нив); над нив се заштитни плочи кои ги штитат од механичко оштетување при подоцнежно ископување; на околу 0,3–0,4 m под површината е предупредувачката лента. Ровот потоа се затрупува со земја, се набива, а одозгора е чакалот на постројката.','Песокот и земјата над каблите се отстранети за да се видат каблите — на реалната траса тие се целосно затрупани.'],
+  d:[['Длабочина на полагање','≈ 0,8 m'],['Постелка','ситен песок, ≈ 10 + 10 cm'],['Механичка заштита','бетонски или PVC плочи'],['Предупредувачка лента','≈ 0,3 – 0,4 m под површината']]},
+ safety:{en:'Protective equipment',p:['Пред секоја работа на опремата се применуваат петте основни правила за безбедна работа: 1) исклучи и видливо одвој, 2) обезбеди од повторно вклучување, 3) провери отсуство на напон, 4) заземји и кратко спој, 5) огради ги или покриј ги соседните делови под напон.','На таблата се заштитните средства: изолациски ракавици, тестер (индикатор) за напон, изолациска мотка, преносно заземјување и заштитен шлем.'],d:[]},
+ relay:{en:'Protection & control panels',p:['Во командната зграда се орманите за заштита, управување и мерење. Нумеричките релеи ги штитат полињата: дистантна заштита за далекуводите, диференцијална заштита за трансформаторите, собирничка заштита.','Уредите за управување на ниво на поле и станичниот компјутер комуницираат со диспечерскиот центар (SCADA), на пример според IEC 61850. Блокадите што ги гледаш во оваа прошетка во реалноста ги изведуваат токму овие уреди.'],d:[]},
  aux:{en:'Station service transformer',p:['Трансформаторот за сопствена потрошувачка (ТСП) ја напојува потрошувачката на самата постројка: осветлување, греење, моторни погони и полначи за акумулаторската батерија, која дава еднонасочен напон за заштита и управување.'],d:[['Преносен однос','20 / 0,4 kV'],['Моќност (пример)','100 – 250 kVA']]}
 };
 
@@ -580,11 +1081,11 @@ scene.updateMatrixWorld(true);
 const COLL=[];
 scene.traverse(o=>{if(!o.isMesh||o.isInstancedMesh||o.userData.noCollide||o.userData.ground)return;
  const b=new THREE.Box3().setFromObject(o);if(b.min.y<1.75&&b.max.y>.35&&b.max.x-b.min.x<30&&b.max.z-b.min.z<30)COLL.push([b.min.x,b.min.z,b.max.x,b.max.z]);});
-const R=.3;
+const R=.3;COLL.push([-4.95,27.8,-2.25,29.7]);
 function hit(x,z){for(const c of COLL)if(x+R>c[0]&&x-R<c[2]&&z+R>c[1]&&z-R<c[3])return true;return false;}
 
 /* ---------- player / modes ---------- */
-const pos=new V3(2.2,1.7,14);let yaw=.22,pitch=-.04;let mode='walk',prevMode='walk';
+const pos=new V3(-3.5,1.7,13);let yaw=-.26,pitch=.02;let mode='walk',prevMode='walk';
 const keys={};let joy={x:0,y:0};
 function tryMove(dx,dz){const nx=pos.x+dx,nz=pos.z+dz;if(!hit(nx,pos.z))pos.x=nx;if(!hit(pos.x,nz))pos.z=nz;
  pos.x=Math.min(X1-.6,Math.max(X0+.6,pos.x));pos.z=Math.min(Z1-.6,Math.max(Z0+.6,pos.z));}
@@ -596,7 +1097,7 @@ function updateWalk(dt){
  if(L>.01)tryMove((-Math.sin(yaw)*f+Math.cos(yaw)*s)*sp*dt,(-Math.cos(yaw)*f-Math.sin(yaw)*s)*sp*dt);
  camera.position.copy(pos);camera.rotation.set(pitch,yaw,0);
 }
-const bird={t:new V3(-1,0,8),r:78,th:.65,ph:.95};
+const bird={t:new V3(-1,0,6),r:95,th:.65,ph:.95};
 function updateOrbit(cam,o){cam.position.set(o.t.x+o.r*Math.sin(o.ph)*Math.sin(o.th),o.t.y+o.r*Math.cos(o.ph),o.t.z+o.r*Math.sin(o.ph)*Math.cos(o.th));cam.lookAt(o.t);}
 
 /* ---------- inspect scene ---------- */
@@ -612,7 +1113,7 @@ const iHelp=new THREE.Box3Helper(new THREE.Box3(),0xe0961a);iHelp.visible=false;
 
 function viewOffset(){
  const w=innerWidth,h=innerHeight;
- if(mode==='inspect'){if(w>760)iCam.setViewOffset(w,h,200,0,w,h);else iCam.setViewOffset(w,h,0,h*.27,w,h);}else iCam.clearViewOffset();
+ if(mode==='inspect'){if(w>760)iCam.setViewOffset(w,h,200,0,w,h);else iCam.setViewOffset(w,h,0,h*.2,w,h);}else iCam.clearViewOffset();
 }
 function openInspect(el){
  if(mode!=='inspect')prevMode=mode;mode='inspect';iEl=el;
@@ -621,7 +1122,7 @@ function openInspect(el){
  const box=new THREE.Box3().setFromObject(iObj),c=box.getCenter(new V3()),sz=box.getSize(new V3());
  iObj.position.x-=c.x;iObj.position.z-=c.z;iObj.position.y-=box.min.y;iObj.updateMatrixWorld(true);
  const md=Math.max(sz.x,sz.y,sz.z);
- orb.t.set(0,sz.y*.48,0);orb.r=md*1.25+1.5;orb.min=md*.3+.6;orb.max=md*4+10;orb.th=.75;orb.ph=1.2;
+ orb.t.set(0,sz.y*.48,0);orb.r=md*(sz.y>sz.x*1.3?1.6:1.25)+2;if(innerWidth<innerHeight)orb.r*=2.1;orb.min=md*.3+.6;orb.max=md*4+10;orb.th=.75;orb.ph=1.2;
  iGround.scale.setScalar(Math.max(6,md*.85));
  if(iGrid)iScene.remove(iGrid);iGrid=new THREE.GridHelper(Math.max(12,md*1.7),Math.round(Math.max(12,md*1.7)),0xbfc6cc,0xccd2d7);iGrid.position.y=.003;iScene.add(iGrid);
  const S=md*.9+2;Object.assign(iSun.shadow.camera,{left:-S,right:S,top:S,bottom:-S,near:.5,far:S*6});iSun.shadow.camera.updateProjectionMatrix();
@@ -638,48 +1139,103 @@ function closeInspect(){mode=prevMode;$('insp').classList.remove('open');$('bar'
 function fillPanel(el){
  const I=INFO[el.type];
  $('iBay').textContent=el.bay;$('iTitle').textContent=el.name;$('iEn').textContent=I.en;
- $('iDesc').innerHTML=I.p.map(t=>'<p>'+t+'</p>').join('')+(I.note?'<div class="note">'+I.note+'</div>':'');
+ $('iDesc').innerHTML=I.p.map(t=>'<p>'+t+'</p>').join('')+(el.note?'<div class="note">'+el.note+'</div>':'')+(I.note?'<div class="note">'+I.note+'</div>':'');
  $('iData').innerHTML=I.d.length?'<h4>Типични податоци</h4><table>'+I.d.map(r=>'<tr><td>'+r[0]+'</td><td>'+r[1]+'</td></tr>').join('')+'</table>':'';
  const pp=$('iParts');pp.innerHTML='';
  Object.keys(iParts).forEach(n=>{const b=document.createElement('button');b.textContent=n;b.onclick=()=>{highlightPart(n);[...pp.children].forEach(x=>x.classList.toggle('on',x===b));};pp.appendChild(b);});
  $('iMsg').style.display='none';renderOps();
 }
 function highlightPart(n){const b=new THREE.Box3();iParts[n].forEach(m=>b.expandByObject(m));iHelp.box.copy(b);iHelp.visible=true;}
+const CPL='Спојно поле';
+function couplerOn(){const b=BAYS[CPL];return !!b&&b.cb.state.closed&&b.els.filter(e=>e.type==='bds').every(e=>!e.state.open);}
+function bothBays(){return ORDER.filter(n=>n!==CPL).filter(n=>{const d=BAYS[n].els.filter(e=>e.type==='bds');return d.length===2&&d.every(e=>!e.state.open);});}
+function connectedTo(bay){const d=BAYS[bay].els.filter(e=>e.type==='bds'&&!e.state.open).map(e=>'СС'+e.sys);return d.length?d.join(' и '):'ниедни собирници';}
+function link(text,el){const a=document.createElement('a');a.href='#';a.textContent=text;a.style.color='var(--acc)';a.onclick=e=>{e.preventDefault();openInspect(el);};return a;}
+function infoLine(){const d=document.createElement('div');d.className='mut';d.style.fontSize='12px';d.style.lineHeight='1.7';return d;}
+const ON='<span style="color:#ff7b6b">вклучен</span>',OFF='<span style="color:#5fd39a">исклучен</span>';
 function renderOps(){
  const el=iEl,o=$('iOps');o.innerHTML='';if(!el)return;
+ if(el.type==='swo'){const s=el.state;const rw=(label,stHtml,btn,fn)=>{const d=document.createElement('div');d.className='op';d.innerHTML='<div class="st">'+label+'<b>'+stHtml+'</b></div>';const b=document.createElement('button');b.textContent=btn;b.onclick=fn;d.appendChild(b);o.appendChild(d);};
+  rw('Вакуумски прекинувач',s.cb?'<span class="r">ВКЛУЧЕН (I)</span>':'<span class="g">ИСКЛУЧЕН (O)</span>',s.cb?'Исклучи':'Вклучи',()=>opSwo(el,'cb'));
+  rw('Количка',s.truckIn?'<span class="r">ВО РАБОТНА ПОЛОЖБА</span>':'<span class="g">ИЗВЛЕЧЕНА</span>',s.truckIn?'Извлечи':'Внеси',()=>opSwo(el,'truck'));
+  rw('Заземјувач',s.earth?'<span class="r">ВКЛУЧЕН</span>':'<span class="g">ИСКЛУЧЕН</span>',s.earth?'Исклучи':'Вклучи',()=>opSwo(el,'earth'));return;}
  const row=(label,stHtml,btn,fn)=>{const d=document.createElement('div');d.className='op';d.innerHTML='<div class="st">'+label+'<b>'+stHtml+'</b></div>';const b=document.createElement('button');b.textContent=btn;b.onclick=fn;d.appendChild(b);o.appendChild(d);};
+ const bay=BAYS[el.bay];
+ if(el.type==='cbl'||el.type==='feeder'){row('Трасата',el.hl?'<span class="r">ИСТАКНАТА (низ земјата)</span>':'нормален приказ',el.hl?'Исклучи истакнување':'Истакни ја трасата',()=>{setCableHL(el,!el.hl);renderOps();});
+  const E=energy(),on=el.type==='feeder'?(E.t1||E.t2):(el.t==='Т1'?E.t1:E.t2),d=infoLine();d.insertAdjacentHTML('beforeend','Под напон: '+(on?'<span style="color:#ff7b6b">да</span>':'<span style="color:#5fd39a">не</span>')+'<br>Поврзува: ');
+  if(el.type==='cbl'){d.appendChild(link('трансформатор '+el.t,bay.els.find(e=>e.type==='tr')));d.appendChild(document.createTextNode(' → '));}
+  d.appendChild(link('20 kV постројка',ELS.find(e=>e.type==='swg')));if(el.type==='feeder')d.appendChild(document.createTextNode(el.oh?' → надземен вод':' → кабелски вод'));
+  d.appendChild(document.createElement('br'));d.appendChild(link('пресек низ кабелскиот ров',ELS.find(e=>e.type==='pit')));o.appendChild(d);return;}
+ if(el.type==='tr'||el.type==='swg'){const d=infoLine();d.appendChild(document.createTextNode('20 kV кабелска врска: '));
+  ELS.filter(e=>e.type==='cbl'&&(el.type==='swg'||e.bay===el.bay)).forEach((c,i)=>{if(i)d.appendChild(document.createTextNode(' · '));d.appendChild(link(c.t+' → Довод '+c.t,c));});o.appendChild(d);return;}
  if(el.type==='cb')row('Прекинувач',el.state.closed?'<span class="r">ВКЛУЧЕН (I)</span>':'<span class="g">ИСКЛУЧЕН (O)</span>',el.state.closed?'Исклучи':'Вклучи',()=>opCB(el));
- if(el.type==='ds'||el.type==='dse')row('Раставувач',el.state.open?'<span class="g">ОТВОРЕН</span>':'<span class="r">ЗАТВОРЕН</span>',el.state.open?'Затвори':'Отвори',()=>opMain(el));
+ if(el.type==='bds'||el.type==='dse')row('Раставувач',el.state.open?'<span class="g">ОТВОРЕН</span>':'<span class="r">ЗАТВОРЕН</span>',el.state.open?'Затвори':'Отвори',()=>opMain(el));
  if(el.type==='dse')row('Заземјувач',el.state.earth?'<span class="r">ВКЛУЧЕН</span>':'<span class="g">ИСКЛУЧЕН</span>',el.state.earth?'Исклучи':'Вклучи',()=>opEarth(el));
- if(el.type==='ds'||el.type==='dse'){const cb=BAYS[el.bay]&&BAYS[el.bay].cb;if(cb){const d=document.createElement('div');d.className='mut';d.style.fontSize='12px';d.innerHTML='Прекинувач во полето: '+(cb.state.closed?'<span style="color:#ff7b6b">вклучен</span>':'<span style="color:#5fd39a">исклучен</span>')+' — ';const a=document.createElement('a');a.href='#';a.textContent='отвори го';a.style.color='var(--acc)';a.onclick=e=>{e.preventDefault();openInspect(cb);};d.appendChild(a);o.appendChild(d);}}
- if(el.type==='cb'){const ds=BAYS[el.bay].els.filter(e=>e.type==='ds'||e.type==='dse');const d=document.createElement('div');d.className='mut';d.style.fontSize='12px';d.textContent='Раставувачи во полето: ';
-  ds.forEach((x,i)=>{const a=document.createElement('a');a.href='#';a.textContent=(x.type==='dse'?'линиски':'собирнички')+' ('+(x.state.open?'отворен':'затворен')+')';a.style.color='var(--acc)';a.onclick=e=>{e.preventDefault();openInspect(x);};if(i)d.appendChild(document.createTextNode(' · '));d.appendChild(a);});o.appendChild(d);}
+ if(!bay||!['cb','bds','dse'].includes(el.type))return;
+ const d=infoLine();
+ if(bay.cb&&el.type!=='cb'){d.insertAdjacentHTML('beforeend','Прекинувач во полето: '+(bay.cb.state.closed?ON:OFF)+' — ');d.appendChild(link('отвори го',bay.cb));d.appendChild(document.createElement('br'));}
+ const ds=bay.els.filter(e=>(e.type==='bds'||e.type==='dse')&&e!==el);
+ if(ds.length){d.appendChild(document.createTextNode(el.type==='cb'?'Раставувачи во полето: ':'Други раставувачи: '));
+  ds.forEach((x,i)=>{if(i)d.appendChild(document.createTextNode(' · '));d.appendChild(link((x.type==='dse'?'линиски':'СС'+x.sys)+' ('+(x.state.open?'отворен':'затворен')+')',x));});d.appendChild(document.createElement('br'));}
+ if(el.bay!==CPL&&bay.els.some(e=>e.type==='bds')){d.insertAdjacentHTML('beforeend','Полето е приклучено на: <b style="color:var(--fg)">'+connectedTo(el.bay)+'</b><br>');
+  const c=BAYS[CPL];if(c&&el.type==='bds'){d.insertAdjacentHTML('beforeend','Спојно поле: '+(couplerOn()?'<span style="color:#ff7b6b">вклучено</span>':'<span style="color:#5fd39a">исклучено</span>')+' — ');d.appendChild(link('отвори го',c.cb));}}
+ o.appendChild(d);
 }
-function msg(t){const m=$('iMsg');m.textContent=t;m.style.display='block';}
+function msg(t){const m=$('iMsg');m.textContent=t;m.style.display='block';if(iEl)logEv('БЛОКАДА — '+iEl.bay+': '+iEl.name,true);}
+function animTo(el,k,useOpen){el.anims.forEach((p,i)=>{const a=p.userData.anim;if(a.k!==k)return;const t=useOpen?a.o:a.c;pushAnim(p,a,t);if(iEl===el&&iAnims[i])pushAnim(iAnims[i],a,t);});dirty=true;}
+function opSwo(el,w){const s=el.state,n='20 kV '+el.name.split(' — ')[0]+': ';
+ if(w==='cb'){s.cb=!s.cb;el.indMat.color.setHex(s.cb?0xc0392b:0x2e8b57);logEv(n+'прекинувач '+(s.cb?'ВКЛУЧЕН':'ИСКЛУЧЕН'));return done();}
+ if(w==='truck'){if(s.cb)return msg('Блокада: вакуумскиот прекинувач е вклучен. Количката смее да се придвижува само со исклучен прекинувач.');
+  if(!s.truckIn&&s.earth)return msg('Блокада: заземјувачот е вклучен — количката не смее да се внесе во работна положба.');
+  s.truckIn=!s.truckIn;animTo(el,'truck',!s.truckIn);logEv(n+'количка '+(s.truckIn?'ВО РАБОТНА ПОЛОЖБА':'ИЗВЛЕЧЕНА'));return done();}
+ if(w==='earth'){if(s.truckIn)return msg('Блокада: заземјувачот може да се вклучи само кога количката е извлечена од работна положба.');
+  s.earth=!s.earth;animTo(el,'earth',!s.earth);logEv(n+'заземјувач '+(s.earth?'ВКЛУЧЕН':'ИСКЛУЧЕН'));return done();}
+}
 const running=[];
+function pushAnim(o,a,t){for(let i=running.length-1;i>=0;i--)if(running[i].o===o)running.splice(i,1);running.push({o,axis:a.axis,kind:a.kind,t});}
 function animate(el,kind){
  const tgt=a=>kind==='main'?(el.state.open?a.o:a.c):(el.state.earth?a.c:a.o);
- el.anims.forEach((p,i)=>{const a=p.userData.anim;if(a.k!==kind)return;running.push({o:p,axis:a.axis,t:tgt(a)});
-  if(iEl===el&&iAnims[i])running.push({o:iAnims[i],axis:a.axis,t:tgt(a)});});
+ el.anims.forEach((p,i)=>{const a=p.userData.anim;if(a.k!==kind)return;pushAnim(p,a,tgt(a));if(iEl===el&&iAnims[i])pushAnim(iAnims[i],a,tgt(a));});
+ dirty=true;
 }
-function opCB(el){el.state.closed=!el.state.closed;el.indMat.color.setHex(el.state.closed?0xc0392b:0x2e8b57);$('iMsg').style.display='none';renderOps();}
+const BLK_CB='Блокада: прекинувачот во полето е вклучен. Раставувачот не смее да се манипулира под оптоварување — прво исклучете го прекинувачот.';
+function bothMsg(b){return 'Блокада: '+(b.length>1?'полињата '+b.join(', ')+' се приклучени':b[0]+' е приклучено')+' на двете собирници. Прво завршете го префрлањето (отворете еден од собирничките раставувачи).';}
+function done(){$('iMsg').style.display='none';renderOps();dirty=true;}
+function opCB(el){
+ if(el.bay===CPL&&el.state.closed){const b=bothBays();if(b.length)return msg(bothMsg(b));}
+ el.state.closed=!el.state.closed;el.indMat.color.setHex(el.state.closed?0xc0392b:0x2e8b57);logEv(el.bay+': прекинувач '+(el.state.closed?'ВКЛУЧЕН':'ИСКЛУЧЕН'));done();
+}
 function opMain(el){
- const cb=BAYS[el.bay]&&BAYS[el.bay].cb;
- if(cb&&cb.state.closed){msg('Блокада: прекинувачот во полето е вклучен. Раставувачот не смее да се манипулира под оптоварување — прво исклучете го прекинувачот.');return;}
- if(el.type==='dse'&&el.state.earth){msg('Блокада: заземјувачот е вклучен. Прво исклучете го заземјувачот, па затворете го раставувачот.');return;}
- el.state.open=!el.state.open;animate(el,'main');$('iMsg').style.display='none';renderOps();
+ const bay=BAYS[el.bay],cb=bay&&bay.cb;
+ if(el.type==='bds'&&el.bay!==CPL){
+  const sib=bay.els.find(e=>e.type==='bds'&&e!==el);
+  if(sib&&!sib.state.open){
+   if(!couplerOn())return msg('Блокада: раставувачот кон '+('СС'+sib.sys)+' е затворен, а спојното поле не е вклучено. Двата собирнички раставувачи смеат истовремено да бидат затворени само при вклучено спојно поле (прекинувач и двата раставувачи) — тогаш СС1 и СС2 се на ист потенцијал и префрлањето е безбедно.');
+  }else if(cb&&cb.state.closed)return msg(BLK_CB);
+ }else{
+  if(cb&&cb.state.closed)return msg(BLK_CB);
+  if(el.type==='dse'&&el.state.earth)return msg('Блокада: заземјувачот е вклучен. Прво исклучете го заземјувачот, па затворете го раставувачот.');
+  if(el.bay===CPL&&!el.state.open){const b=bothBays();if(b.length)return msg(bothMsg(b));}
+ }
+ el.state.open=!el.state.open;animate(el,'main');logEv(el.bay+': '+(el.type==='dse'?'линиски раставувач':'раставувач СС'+el.sys)+' '+(el.state.open?'ОТВОРЕН':'ЗАТВОРЕН'));done();
 }
 function opEarth(el){
- if(!el.state.open){msg('Блокада: заземјувачот може да се вклучи само кога линискиот раставувач е отворен.');return;}
- el.state.earth=!el.state.earth;animate(el,'earth');$('iMsg').style.display='none';renderOps();
+ if(!el.state.open)return msg('Блокада: заземјувачот може да се вклучи само кога линискиот раставувач е отворен.');
+ el.state.earth=!el.state.earth;animate(el,'earth');logEv(el.bay+': заземјувач '+(el.state.earth?'ВКЛУЧЕН':'ИСКЛУЧЕН'));done();
 }
-function stepAnims(dt){for(let i=running.length-1;i>=0;i--){const r=running[i];const c=r.o.rotation[r.axis];const d=r.t-c;if(Math.abs(d)<.002){r.o.rotation[r.axis]=r.t;running.splice(i,1);}else r.o.rotation[r.axis]=c+Math.sign(d)*Math.min(Math.abs(d),dt*1.6);}}
+function stepAnims(dt){
+ for(let i=running.length-1;i>=0;i--){const r=running[i];
+  if(r.kind==='pos'){const c=r.o.position[r.axis];const d=r.t-c;if(Math.abs(d)<.001){r.o.position[r.axis]=r.t;running.splice(i,1);}else r.o.position[r.axis]=c+Math.sign(d)*Math.min(Math.abs(d),dt*.45);continue;}
+  if(r.kind==='panto'){const A=r.o.userData.anim;const d=r.t-A.v;if(Math.abs(d)<.002){A.v=r.t;running.splice(i,1);}else A.v+=Math.sign(d)*Math.min(Math.abs(d),dt*.8);setPanto(r.o,A.v);continue;}
+  const c=r.o.rotation[r.axis];const d=r.t-c;if(Math.abs(d)<.002){r.o.rotation[r.axis]=r.t;running.splice(i,1);}else r.o.rotation[r.axis]=c+Math.sign(d)*Math.min(Math.abs(d),dt*1.6);}
+ if(running.length)dirty=true;
+}
 
 /* ---------- picking, hover, tooltip ---------- */
 const ray=new THREE.Raycaster();const ndc=new V2();
 const pickRoots=ELS.map(e=>e.group).concat([BLD]);
 const hoverHelper=new THREE.Box3Helper(new THREE.Box3(),0xf2b632);hoverHelper.visible=false;scene.add(hoverHelper);
-function pickAt(cx,cy,cam,roots){ndc.set(cx/innerWidth*2-1,-(cy/innerHeight)*2+1);ray.setFromCamera(ndc,cam);ray.far=mode==='walk'?70:600;const h=ray.intersectObjects(roots,true);return h.length?h[0].object:null;}
+function pickAt(cx,cy,cam,roots){ndc.set(cx/innerWidth*2-1,-(cy/innerHeight)*2+1);ray.setFromCamera(ndc,cam);ray.far=mode==='walk'?70:600;const h=ray.intersectObjects(roots,true).filter(x=>!x.object.userData.noPick&&x.object.visible);return h.length?h[0].object:null;}
 function elAt(cx,cy){const o=pickAt(cx,cy,camera,pickRoots);return o&&o.userData.el!==undefined?ELS[o.userData.el]:null;}
 const tip=$('tip');
 function showTip(x,y,html){tip.innerHTML=html;tip.style.display='block';const w=tip.offsetWidth;tip.style.left=Math.min(innerWidth-w-8,x+14)+'px';tip.style.top=(y+16)+'px';}
@@ -735,12 +1291,13 @@ addEventListener('blur',()=>{for(const k in keys)keys[k]=false;});
 function teleport(el){
  let px,pz,look;
  if(el.view){[px,pz]=el.view.pos;look=new V3(...el.view.look);}
+ else if(el.type==='bds'){const c=new THREE.Box3().setFromObject(el.group).getCenter(new V3());px=c.x+1.1;pz=c.z+(el.sys===1?-4.4:4.4);look=new V3(c.x,6,c.z);}
  else{const b=new THREE.Box3().setFromObject(el.group),c=b.getCenter(new V3());px=c.x+6.3;pz=c.z;look=new V3(c.x,b.max.y*.45,c.z);}
  pos.set(px,1.7,pz);
  if(hit(pos.x,pos.z)){for(let r=.5;r<4;r+=.5){let ok=false;for(let a=0;a<6.28;a+=.785){if(!hit(px+Math.cos(a)*r,pz+Math.sin(a)*r)){pos.x=px+Math.cos(a)*r;pos.z=pz+Math.sin(a)*r;ok=true;break;}}if(ok)break;}}
  const d=look.clone().sub(pos);yaw=Math.atan2(-d.x,-d.z);pitch=Math.atan2(d.y,Math.hypot(d.x,d.z));
  if(mode==='inspect')closeInspect();if(mode==='bird')setBird(false);
- hoverHelper.box.setFromObject(el.group);hoverHelper.visible=true;hovEl=null;setTimeout(()=>{if(!hovEl)hoverHelper.visible=false;},2200);
+ hoverHelper.box.setFromObject(el.group);hoverHelper.visible=true;hovEl=null;setTimeout(()=>{if(!hovEl){hoverHelper.visible=false;dirty=true;}},2200);
  if(innerWidth<=760){$('list').classList.remove('open');$('bList').classList.remove('on');}
 }
 (function buildList(){const L=$('list');
@@ -754,7 +1311,7 @@ function setBird(on){
  $('joy').style.display=(isTouch&&!on)?'block':'none';hoverHelper.visible=false;hideTip();
 }
 $('bBird').onclick=()=>setBird(mode!=='bird');
-function setShadows(on){shadowsOn=on;sun.castShadow=on;iSun.castShadow=on;$('bShadow').classList.toggle('on',on);}
+function setShadows(on){shadowsOn=on;dirty=true;sun.castShadow=on;iSun.castShadow=on;$('bShadow').classList.toggle('on',on);}
 $('bShadow').onclick=()=>setShadows(!shadowsOn);setShadows(shadowsOn);
 $('iClose').onclick=closeInspect;
 $('bHelp').onclick=()=>{$('start').style.display='flex';};
@@ -768,14 +1325,18 @@ if(isTouch){$('hint').style.display='none';$('joy').style.display='block';}
 function resize(){renderer.setSize(innerWidth,innerHeight,false);camera.aspect=iCam.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();viewOffset();iCam.updateProjectionMatrix();}
 addEventListener('resize',resize);
 let last=performance.now();
+logEv('Систем стартуван — сите полиња во погон');
+const lastM=new THREE.Matrix4();let lastMode='';
+['pointermove','pointerdown','pointerup','keydown','keyup','wheel','resize','click'].forEach(ev=>addEventListener(ev,()=>{dirty=true;},{passive:true,capture:true}));
 renderer.setAnimationLoop(()=>{const now=performance.now(),dt=Math.min(.05,(now-last)/1000);last=now;
  stepAnims(dt);
- if(mode==='walk'){updateWalk(dt);renderer.render(scene,camera);}
- else if(mode==='bird'){updateOrbit(camera,bird);renderer.render(scene,camera);}
- else{updateOrbit(iCam,orb);renderer.render(iScene,iCam);}
+ let sc=scene,cam=camera;
+ if(mode==='walk')updateWalk(dt);else if(mode==='bird')updateOrbit(camera,bird);else{updateOrbit(iCam,orb);sc=iScene;cam=iCam;}
+ cam.updateMatrixWorld();
+ if(dirty||mode!==lastMode||!cam.matrixWorld.equals(lastM)){renderer.render(sc,cam);lastM.copy(cam.matrixWorld);lastMode=mode;dirty=false;}
 });
 $('load').style.display='none';
-window.__sub={ELS,openInspect,closeInspect,setBird,teleport,pos,get mode(){return mode;}};
+window.__sub={lookFrom:(px,pz,lx,ly,lz)=>teleport({group:BLD,view:{pos:[px,pz],look:[lx,ly,lz]}}),ELS,openInspect,closeInspect,setBird,teleport,pos,get mode(){return mode;}};
 })();
 </script>
 </body>
